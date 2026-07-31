@@ -5,28 +5,24 @@ import {
   Sparkles,
   Wand2,
   FileText,
-  Lightbulb,
   MessageSquare,
-  Copy,
   RefreshCw,
-  Save,
   ArrowRight,
-  ChevronDown,
-  ChevronUp,
-  PenTool,
-  Target,
-  Clock,
   Check,
   Key,
   ExternalLink,
+  Target,
+  Hash,
+  AlertTriangle,
 } from "lucide-react";
+import ScriptCard, { type Roteiro } from "@/components/ScriptCard";
 
 const templates = [
-  { id: 1, name: "Tutorial", description: "Vídeo educativo passo a passo" },
-  { id: 2, name: "Review", description: "Análise de produto ou serviço" },
-  { id: 3, name: "Vlog", description: "Registro pessoal do dia a dia" },
-  { id: 4, name: "Entrevista", description: "Conversa com convidados" },
-  { id: 5, name: "Shorts", description: "Conteúdo rápido e direto" },
+  { id: "Tutorial", name: "Tutorial", description: "Vídeo educativo passo a passo" },
+  { id: "Review", name: "Review", description: "Análise de produto ou serviço" },
+  { id: "Vlog", name: "Vlog", description: "Registro pessoal do dia a dia" },
+  { id: "Entrevista", name: "Entrevista", description: "Conversa com convidados" },
+  { id: "Shorts", name: "Shorts", description: "Conteúdo rápido e direto" },
 ];
 
 const tones = [
@@ -37,103 +33,50 @@ const tones = [
   "Educativo e Didático",
 ];
 
+const quantidades = [1, 3, 5];
+
 export default function ScriptPage() {
-  const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [selectedTone, setSelectedTone] = useState<string>("");
-  const [topic, setTopic] = useState("");
-  const [hook, setHook] = useState("");
-  const [script, setScript] = useState("");
-  const [keywords, setKeywords] = useState<string[]>([]);
-  const [newKeyword, setNewKeyword] = useState("");
+  const [tema, setTema] = useState("");
+  const [quantidade, setQuantidade] = useState<number>(3);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
-  const [expandedSections, setExpandedSections] = useState<string[]>([
-    "tema",
-    "gancho",
-    "roteiro",
-    "palavras-chave",
-  ]);
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleSection = (section: string) => {
-    setExpandedSections((prev) =>
-      prev.includes(section)
-        ? prev.filter((s) => s !== section)
-        : [...prev, section]
-    );
-  };
-
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
+    if (!tema.trim()) return;
     setIsGenerating(true);
-    setTimeout(() => {
-      setHook(
-        "Você sabia que 90% dos criadores de conteúdo desistem nos primeiros 3 meses? Neste vídeo, vou te mostrar exatamente o que fazer para NÃO fazer parte dessa estatística..."
+    setError(null);
+    setRoteiros([]);
+
+    try {
+      const res = await fetch("/api/generate-scripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tema,
+          quantidade,
+          tipoVideo: selectedTemplate,
+          tomVoz: selectedTone,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Erro ao gerar roteiros.");
+      }
+
+      setRoteiros(data.roteiros || []);
+    } catch (err) {
+      console.log("[v0] Falha na geração:", err);
+      setError(
+        err instanceof Error ? err.message : "Erro inesperado ao gerar roteiros."
       );
-      setScript(
-        `[GANCHO - 0:00-0:03]\n${hook || "Você sabia que 90% dos criadores de conteúdo desistem nos primeiros 3 meses?"}\n\n[INTRODUÇÃO - 0:03-0:15]\nFala pessoal! Sejam bem-vindos a mais um vídeo. Se você é novo por aqui, se inscreve e ativa o sininho porque hoje vou compartilhar algo que vai mudar completamente a forma como você cria conteúdo.\n\n[DESENVOLVIMENTO - 0:15-2:00]\nPrimeiro, vamos falar sobre o erro mais comum que os iniciantes cometem... [Desenvolver o conteúdo principal aqui]\n\n[CONCLUSÃO - 2:00-2:15]\nEntão galera, se vocês gostaram do vídeo, deixe seu like e se inscrevam no canal. Compartilhem com aquele criador de conteúdo que precisa ouvir isso. Um abraço e até o próximo vídeo!`
-      );
-      setKeywords([
-        "criador de conteúdo",
-        "marketing digital",
-        "dicas tiktok",
-        "crescer nas redes",
-        "conteúdo viral",
-      ]);
+    } finally {
       setIsGenerating(false);
-    }, 2000);
-  };
-
-  const handleCopy = (text: string, type: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(type);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  const addKeyword = () => {
-    if (newKeyword && !keywords.includes(newKeyword)) {
-      setKeywords([...keywords, newKeyword]);
-      setNewKeyword("");
     }
-  };
-
-  const removeKeyword = (keyword: string) => {
-    setKeywords(keywords.filter((k) => k !== keyword));
-  };
-
-  const Section = ({
-    id,
-    title,
-    icon: Icon,
-    children,
-  }: {
-    id: string;
-    title: string;
-    icon: React.ElementType;
-    children: React.ReactNode;
-  }) => {
-    const isExpanded = expandedSections.includes(id);
-    return (
-      <div className="glass-card rounded-xl overflow-hidden">
-        <button
-          onClick={() => toggleSection(id)}
-          className="w-full flex items-center justify-between p-4 hover:bg-[var(--surface-hover)] transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <Icon className="w-5 h-5 text-[var(--primary)]" />
-            <span className="font-semibold">{title}</span>
-          </div>
-          {isExpanded ? (
-            <ChevronUp className="w-5 h-5 text-[var(--text-secondary)]" />
-          ) : (
-            <ChevronDown className="w-5 h-5 text-[var(--text-secondary)]" />
-          )}
-        </button>
-        {isExpanded && (
-          <div className="p-4 pt-0 border-t border-[var(--border)]">
-            {children}
-          </div>
-        )}
-      </div>
-    );
   };
 
   return (
@@ -147,36 +90,49 @@ export default function ScriptPage() {
           </h1>
         </div>
         <p className="text-[var(--text-secondary)]">
-          Gere ideias, hooks, roteiros e palavras-chave com IA
+          Descreva sua ideia e deixe a IA gerar roteiros completos e prontos para
+          gravar
         </p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left - Configuration */}
         <div className="lg:col-span-1 space-y-4">
-          {/* API Key Status */}
+          {/* Tema / Ideia Central */}
           <div className="glass-card rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold flex items-center gap-2">
-                <Key className="w-4 h-4 text-[var(--accent-green)]" />
-                Status da IA
-              </h3>
-              <a
-                href="/settings"
-                className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
-              >
-                Configurar
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-            <div className="p-3 rounded-lg bg-[var(--accent-green)]/10 border border-[var(--accent-green)]/20">
-              <p className="text-sm text-[var(--accent-green)] flex items-center gap-2">
-                <Check className="w-4 h-4" />
-                Grok (xAI) Conectado
-              </p>
-              <p className="text-xs text-[var(--text-secondary)] mt-1">
-                IA gratuita configurada
-              </p>
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <Target className="w-4 h-4 text-[var(--accent-pink)]" />
+              Tema / Ideia Central
+            </h3>
+            <textarea
+              value={tema}
+              onChange={(e) => setTema(e.target.value)}
+              placeholder="Ex: Como economizar em produtos de casa"
+              className="input-field min-h-[100px] resize-none"
+              rows={4}
+            />
+          </div>
+
+          {/* Quantidade de Roteiros */}
+          <div className="glass-card rounded-xl p-4">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <Hash className="w-4 h-4 text-[var(--accent-cyan)]" />
+              Quantidade de Roteiros
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              {quantidades.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setQuantidade(q)}
+                  className={`py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                    quantidade === q
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] border border-[var(--border)]"
+                  }`}
+                >
+                  {q} {q === 1 ? "roteiro" : "roteiros"}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -190,7 +146,11 @@ export default function ScriptPage() {
               {templates.map((template) => (
                 <button
                   key={template.id}
-                  onClick={() => setSelectedTemplate(template.id)}
+                  onClick={() =>
+                    setSelectedTemplate(
+                      selectedTemplate === template.id ? "" : template.id
+                    )
+                  }
                   className={`w-full text-left p-3 rounded-lg transition-all ${
                     selectedTemplate === template.id
                       ? "bg-gradient-to-r from-[var(--primary)]/20 to-[var(--accent-pink)]/20 border border-[var(--primary)]/30"
@@ -216,7 +176,9 @@ export default function ScriptPage() {
               {tones.map((tone) => (
                 <button
                   key={tone}
-                  onClick={() => setSelectedTone(tone)}
+                  onClick={() =>
+                    setSelectedTone(selectedTone === tone ? "" : tone)
+                  }
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                     selectedTone === tone
                       ? "bg-[var(--primary)] text-white"
@@ -229,10 +191,33 @@ export default function ScriptPage() {
             </div>
           </div>
 
+          {/* API Key Status */}
+          <div className="glass-card rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Key className="w-4 h-4 text-[var(--accent-green)]" />
+                Status da IA
+              </h3>
+              <a
+                href="/settings"
+                className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
+              >
+                Configurar
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--accent-green)]/10 border border-[var(--accent-green)]/20">
+              <p className="text-sm text-[var(--accent-green)] flex items-center gap-2">
+                <Check className="w-4 h-4" />
+                Grok (xAI) Conectado
+              </p>
+            </div>
+          </div>
+
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={!topic || isGenerating}
+            disabled={!tema.trim() || isGenerating}
             className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
@@ -243,141 +228,77 @@ export default function ScriptPage() {
             ) : (
               <>
                 <Wand2 className="w-5 h-5" />
-                Gerar com IA
+                Gerar Roteiros Completos
               </>
             )}
           </button>
         </div>
 
-        {/* Right - Editor */}
+        {/* Right - Output */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Topic Input */}
-          <Section id="tema" title="Tema do Vídeo" icon={Target}>
-            <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="Ex: Como crescer no TikTok em 2026"
-              className="input-field mt-3"
-            />
-          </Section>
+          {error && (
+            <div className="glass-card rounded-xl p-4 border border-[var(--accent-red)]/30 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-[var(--accent-red)] shrink-0" />
+              <p className="text-sm text-[var(--accent-red)]">{error}</p>
+            </div>
+          )}
 
-          {/* Hook */}
-          <Section id="gancho" title="Gancho (Hook)" icon={Lightbulb}>
-            <div className="relative mt-3">
-              <textarea
-                value={hook}
-                onChange={(e) => setHook(e.target.value)}
-                placeholder="Escreva um gancho chamativo para reter a atenção nos primeiros 3 segundos..."
-                className="input-field min-h-[100px] resize-none"
-                rows={3}
-              />
-              <button
-                onClick={() => handleCopy(hook, "hook")}
-                className="absolute top-2 right-2 p-2 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
+          {/* Loading skeletons */}
+          {isGenerating &&
+            Array.from({ length: quantidade }).map((_, i) => (
+              <div
+                key={i}
+                className="glass-card rounded-2xl p-4 animate-pulse space-y-3"
               >
-                {copied === "hook" ? (
-                  <Check className="w-4 h-4 text-[var(--accent-green)]" />
-                ) : (
-                  <Copy className="w-4 h-4 text-[var(--text-secondary)]" />
-                )}
-              </button>
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-[var(--accent-orange)]" />
-              <span className="text-xs text-[var(--text-secondary)]">
-                Ideal: 1-2 frases (3-5 segundos de leitura)
-              </span>
-            </div>
-          </Section>
+                <div className="h-6 w-1/2 rounded bg-[var(--surface-hover)]" />
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <div className="h-20 rounded bg-[var(--surface-hover)]" />
+                  <div className="h-20 rounded bg-[var(--surface-hover)]" />
+                  <div className="h-20 rounded bg-[var(--surface-hover)]" />
+                  <div className="h-20 rounded bg-[var(--surface-hover)]" />
+                </div>
+              </div>
+            ))}
 
-          {/* Script */}
-          <Section id="roteiro" title="Roteiro Completo" icon={PenTool}>
-            <div className="relative mt-3">
-              <textarea
-                value={script}
-                onChange={(e) => setScript(e.target.value)}
-                placeholder="Desenvolva seu roteiro aqui. Use [COLCHETES] para marcar timestamps e instruções de edição..."
-                className="input-field min-h-[300px] resize-none font-mono text-sm"
-                rows={12}
-              />
-              <div className="absolute top-2 right-2 flex gap-1">
-                <button
-                  onClick={() => handleCopy(script, "script")}
-                  className="p-2 rounded-lg hover:bg-[var(--surface-hover)] transition-colors"
-                >
-                  {copied === "script" ? (
-                    <Check className="w-4 h-4 text-[var(--accent-green)]" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-[var(--text-secondary)]" />
-                  )}
-                </button>
+          {/* Empty state */}
+          {!isGenerating && roteiros.length === 0 && !error && (
+            <div className="glass-card rounded-2xl p-10 flex flex-col items-center justify-center text-center min-h-[300px]">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--primary)]/20 to-[var(--accent-pink)]/20 flex items-center justify-center mb-4">
+                <Sparkles className="w-8 h-8 text-[var(--primary)]" />
               </div>
+              <h3 className="font-semibold text-lg mb-1">
+                Seus roteiros aparecerão aqui
+              </h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-sm text-pretty">
+                Preencha o tema, escolha a quantidade e clique em &quot;Gerar
+                Roteiros Completos&quot; para receber roteiros estruturados prontos
+                para gravar.
+              </p>
             </div>
-            <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-4 text-xs text-[var(--text-secondary)]">
-                <span>
-                  {script.split(/\s+/).filter(Boolean).length} palavras
-                </span>
-                <span>
-                  ~{Math.ceil(
-                    script.split(/\s+/).filter(Boolean).length / 150
-                  )}{" "}
-                  min de fala
-                </span>
-              </div>
-              <button className="btn-secondary text-sm py-2 px-4 flex items-center gap-2">
-                <Save className="w-4 h-4" />
-                Salvar Roteiro
-              </button>
-            </div>
-          </Section>
+          )}
 
-          {/* Keywords */}
-          <Section id="palavras-chave" title="Palavras-chave SEO" icon={Target}>
-            <div className="mt-3">
-              <div className="flex flex-wrap gap-2 mb-3">
-                {keywords.map((keyword) => (
-                  <span
-                    key={keyword}
-                    className="px-3 py-1.5 rounded-full bg-[var(--primary)]/20 text-[var(--primary)] text-sm font-medium flex items-center gap-1"
-                  >
-                    {keyword}
-                    <button
-                      onClick={() => removeKeyword(keyword)}
-                      className="ml-1 hover:text-[var(--accent-red)]"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newKeyword}
-                  onChange={(e) => setNewKeyword(e.target.value)}
-                  placeholder="Adicionar palavra-chave..."
-                  className="input-field flex-1"
-                  onKeyPress={(e) => e.key === "Enter" && addKeyword()}
-                />
-                <button onClick={addKeyword} className="btn-secondary px-4">
-                  +
-                </button>
-              </div>
-            </div>
-          </Section>
+          {/* Generated cards */}
+          {roteiros.map((roteiro, i) => (
+            <ScriptCard
+              key={i}
+              roteiro={roteiro}
+              index={i + 1}
+              total={roteiros.length}
+            />
+          ))}
 
           {/* Next Step */}
-          <div className="flex justify-end">
-            <a
-              href="/mass-production"
-              className="btn-primary flex items-center gap-2"
-            >
-              Próximo: Criação em Massa
-              <ArrowRight className="w-4 h-4" />
-            </a>
-          </div>
+          {roteiros.length > 0 && (
+            <div className="flex justify-end">
+              <a
+                href="/mass-production"
+                className="btn-primary flex items-center gap-2"
+              >
+                Próximo: Criação em Massa
+                <ArrowRight className="w-4 h-4" />
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>
