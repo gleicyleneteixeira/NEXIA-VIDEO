@@ -5,7 +5,7 @@ import {
   Play, Pause, SkipBack, SkipForward, Scissors, Copy, Trash2,
   Volume2, VolumeX, Eye, EyeOff, Lock, Unlock, Plus,
   ZoomIn, ZoomOut, Snowflake, Rewind, FlipHorizontal, FlipVertical,
-  RotateCw, Crop, AlignLeft, AlignRight
+  RotateCw, Crop, AlignLeft, AlignRight, Undo2, Redo2, Bookmark, ChevronDown
 } from "lucide-react";
 import { useProjectStore, usePlaybackStore, useUIStore, useMediaStore } from "@/lib/editor";
 import type { TimelineItem, BeatMarker, MediaFile } from "@/lib/editor";
@@ -22,7 +22,7 @@ export default function Timeline() {
     addTrack, removeTrack, reorderTracks, setKeyframe, removeKeyframe
   } = useProjectStore();
   const { isPlaying, currentTime, togglePlayback, seekTo, setCurrentTime } = usePlaybackStore();
-  const { selectedIds, select, clearSelection, zoom, zoomIn, zoomOut } = useUIStore();
+  const { selectedIds, select, clearSelection, zoom, zoomIn, zoomOut, undo, redo, canUndo, canRedo } = useUIStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -32,6 +32,7 @@ export default function Timeline() {
   const [dragOffset, setDragOffset] = useState({ x: 0, frame: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
   const [draggedTrackIndex, setDraggedTrackIndex] = useState<number | null>(null);
+  const [showTransformMenu, setShowTransformMenu] = useState(false);
 
   const timeline = project.timeline;
   const pxPerFrame = zoom * 2;
@@ -362,7 +363,8 @@ export default function Timeline() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if ((e.target as HTMLElement)?.tagName === "INPUT" || (e.target as HTMLElement)?.tagName === "TEXTAREA") return;
+
       if (e.key === " " || e.code === "Space") {
         e.preventDefault();
         togglePlayback();
@@ -375,8 +377,26 @@ export default function Timeline() {
         e.preventDefault();
         selectedIds.forEach((id: string) => duplicateItem(id));
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
+        if (canUndo()) undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
+        e.preventDefault();
+        if (canRedo()) redo();
+      }
+      if (e.key === "q" || e.key === "Q") {
+        trimStartToPlayhead();
+      }
+      if (e.key === "w" || e.key === "W") {
+        trimEndToPlayhead();
+      }
+      if (e.key === "s" || e.key === "S" || ((e.ctrlKey || e.metaKey) && (e.key === "b" || e.key === "B"))) {
+        e.preventDefault();
+        selectedIds.forEach((id: string) => {
+          splitItem(id, currentTime);
+        });
+        clearSelection();
       }
       if (e.key === "ArrowLeft") {
         window.dispatchEvent(new Event("timeline-user-seek"));
@@ -393,7 +413,11 @@ export default function Timeline() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIds, currentTime, togglePlayback, removeItem, duplicateItem, clearSelection, seekTo, addBeatMarker]);
+  }, [
+    selectedIds, currentTime, togglePlayback, removeItem, duplicateItem,
+    clearSelection, seekTo, addBeatMarker, trimStartToPlayhead, trimEndToPlayhead,
+    splitItem, undo, redo, canUndo, canRedo
+  ]);
 
   const playheadX = frameToPixel(currentTime);
 
@@ -422,6 +446,136 @@ export default function Timeline() {
           {formatTime(currentTime)}
         </span>
 
+        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
+
+        <button onClick={undo} disabled={!canUndo()} className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30" title="Desfazer (Ctrl+Z)">
+          <Undo2 size={14} />
+        </button>
+        <button onClick={redo} disabled={!canRedo()} className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30" title="Refazer (Ctrl+Y / Ctrl+Shift+Z)">
+          <Redo2 size={14} />
+        </button>
+
+        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
+
+        <button
+          onClick={() => selectedIds.forEach((id: string) => { splitItem(id, currentTime); clearSelection(); })}
+          disabled={selectedIds.size === 0}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
+          title="Cortar no playhead (Dividir) (S / Ctrl+B)"
+        >
+          <Scissors size={14} />
+        </button>
+        <button
+          onClick={trimStartToPlayhead}
+          disabled={!selectedItem || currentTime <= selectedItem.startFrame || currentTime >= selectedItem.startFrame + selectedItem.durationInFrames}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
+          title="Excluir à Esquerda (Q)"
+        >
+          <AlignLeft size={14} />
+        </button>
+        <button
+          onClick={trimEndToPlayhead}
+          disabled={!selectedItem || currentTime <= selectedItem.startFrame || currentTime >= selectedItem.startFrame + selectedItem.durationInFrames}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
+          title="Excluir à Direita (W)"
+        >
+          <AlignRight size={14} />
+        </button>
+        <button
+          onClick={() => { selectedIds.forEach((id: string) => removeItem(id)); clearSelection(); }}
+          disabled={selectedIds.size === 0}
+          className="p-1.5 hover:bg-red-900/30 rounded text-red-400 disabled:opacity-30"
+          title="Excluir (Delete / Backspace)"
+        >
+          <Trash2 size={14} />
+        </button>
+
+        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
+
+        <button
+          onClick={() => addBeatMarker(currentTime)}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400"
+          title="Adicionar Marcador (M)"
+        >
+          <Bookmark size={14} />
+        </button>
+        <button
+          onClick={() => selectedItem && updateItem(selectedItem.id, { crop: { ...selectedItem.crop, enabled: !selectedItem.crop.enabled } })}
+          disabled={!selectedItem}
+          className={`p-1.5 rounded disabled:opacity-30 ${selectedItem?.crop?.enabled ? "bg-purple-500/20 text-purple-400 border border-purple-500/50" : "text-gray-400 hover:bg-[#1e1e2e]"}`}
+          title="Recortar (Crop)"
+        >
+          <Crop size={14} />
+        </button>
+
+        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
+
+        <div className="relative">
+          <button
+            onClick={() => setShowTransformMenu(!showTransformMenu)}
+            disabled={selectedIds.size === 0}
+            className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30 flex items-center gap-0.5"
+            title="Transformar"
+          >
+            <RotateCw size={14} />
+            <ChevronDown size={10} />
+          </button>
+          {showTransformMenu && selectedIds.size > 0 && (
+            <div className="absolute top-8 left-0 w-44 bg-[#181824] border border-white/10 rounded shadow-xl py-1 z-50 text-[11px] text-white">
+              <button
+                onClick={() => {
+                  selectedIds.forEach((id: string) => freezeFrame(id, currentTime));
+                  setShowTransformMenu(false);
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-white/5 flex items-center gap-2"
+              >
+                <Snowflake size={12} />
+                <span>Congelar (Freeze)</span>
+              </button>
+              <button
+                onClick={() => {
+                  selectedIds.forEach((id: string) => reverseItem(id));
+                  setShowTransformMenu(false);
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-white/5 flex items-center gap-2"
+              >
+                <Rewind size={12} />
+                <span>Reverso</span>
+              </button>
+              <button
+                onClick={() => {
+                  selectedIds.forEach((id: string) => mirrorItem(id, "h"));
+                  setShowTransformMenu(false);
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-white/5 flex items-center gap-2"
+              >
+                <FlipHorizontal size={12} />
+                <span>Espelhar (Mirror)</span>
+              </button>
+              <button
+                onClick={() => {
+                  selectedIds.forEach((id: string) => rotateItem(id, 90));
+                  setShowTransformMenu(false);
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-white/5 flex items-center gap-2"
+              >
+                <RotateCw size={12} />
+                <span>Girar (Rotate 90°)</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
+
+        <button
+          onClick={() => addTrack("video")}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400"
+          title="Adicionar camada de vídeo"
+        >
+          <Plus size={14} />
+        </button>
+
         <div className="flex-1" />
 
         <div className="flex items-center gap-1">
@@ -449,104 +603,6 @@ export default function Timeline() {
           <span className="text-sm leading-none font-bold">◆</span>
         </button>
 
-        <button
-          onClick={() => selectedIds.forEach((id: string) => { splitItem(id, currentTime); clearSelection(); })}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Cortar no playhead (Dividir)"
-        >
-          <Scissors size={14} />
-        </button>
-        <button
-          onClick={trimStartToPlayhead}
-          disabled={!selectedItem || currentTime <= selectedItem.startFrame || currentTime >= selectedItem.startFrame + selectedItem.durationInFrames}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Cortar para trás (Início ao Playhead)"
-        >
-          <AlignLeft size={14} />
-        </button>
-        <button
-          onClick={trimEndToPlayhead}
-          disabled={!selectedItem || currentTime <= selectedItem.startFrame || currentTime >= selectedItem.startFrame + selectedItem.durationInFrames}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Cortar para frente (Playhead ao Fim)"
-        >
-          <AlignRight size={14} />
-        </button>
-        <button
-          onClick={() => selectedIds.forEach((id: string) => duplicateItem(id))}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Duplicar"
-        >
-          <Copy size={14} />
-        </button>
-        <button
-          onClick={() => { selectedIds.forEach((id: string) => removeItem(id)); clearSelection(); }}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-red-900/30 rounded text-red-400 disabled:opacity-30"
-          title="Excluir"
-        >
-          <Trash2 size={14} />
-        </button>
-
-        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
-
-        <button
-          onClick={() => addTrack("video")}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400"
-          title="Adicionar camada de vídeo"
-        >
-          <Plus size={14} />
-        </button>
-
-        <button
-          onClick={() => selectedIds.forEach((id: string) => freezeFrame(id, currentTime))}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Congelar Frame"
-        >
-          <Snowflake size={14} />
-        </button>
-        <button
-          onClick={() => selectedIds.forEach((id: string) => reverseItem(id))}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Inverter"
-        >
-          <Rewind size={14} />
-        </button>
-        <button
-          onClick={() => selectedIds.forEach((id: string) => mirrorItem(id, "h"))}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Espelhar Horizontal"
-        >
-          <FlipHorizontal size={14} />
-        </button>
-        <button
-          onClick={() => selectedIds.forEach((id: string) => mirrorItem(id, "v"))}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Espelhar Vertical"
-        >
-          <FlipVertical size={14} />
-        </button>
-        <button
-          onClick={() => selectedIds.forEach((id: string) => rotateItem(id, 90))}
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Girar 90°"
-        >
-          <RotateCw size={14} />
-        </button>
-        <button
-          disabled={selectedIds.size === 0}
-          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
-          title="Crop"
-        >
-          <Crop size={14} />
-        </button>
       </div>
 
       <div className="flex flex-1 overflow-hidden">

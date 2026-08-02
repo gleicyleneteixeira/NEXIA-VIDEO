@@ -258,9 +258,26 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
     const video = e.currentTarget;
     if (video.videoWidth && video.videoHeight) {
       if (item.mediaWidth !== video.videoWidth || item.mediaHeight !== video.videoHeight) {
+        const canvasW = timeline.canvas?.width || timeline.width || 1920;
+        const canvasH = timeline.canvas?.height || timeline.height || 1080;
+        const canvasRatio = canvasW / canvasH;
+        const mediaRatio = video.videoWidth / video.videoHeight;
+
+        let fillScale = 1;
+        if (mediaRatio > canvasRatio) {
+          fillScale = canvasH / (canvasW / mediaRatio);
+        } else {
+          fillScale = canvasW / (canvasH * mediaRatio);
+        }
+
         updateItem(item.id, {
           mediaWidth: video.videoWidth,
-          mediaHeight: video.videoHeight
+          mediaHeight: video.videoHeight,
+          transform: {
+            ...item.transform,
+            scaleX: fillScale,
+            scaleY: fillScale,
+          }
         });
       }
     }
@@ -270,9 +287,26 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
     const img = e.currentTarget;
     if (img.naturalWidth && img.naturalHeight) {
       if (item.mediaWidth !== img.naturalWidth || item.mediaHeight !== img.naturalHeight) {
+        const canvasW = timeline.canvas?.width || timeline.width || 1920;
+        const canvasH = timeline.canvas?.height || timeline.height || 1080;
+        const canvasRatio = canvasW / canvasH;
+        const mediaRatio = img.naturalWidth / img.naturalHeight;
+
+        let fillScale = 1;
+        if (mediaRatio > canvasRatio) {
+          fillScale = canvasH / (canvasW / mediaRatio);
+        } else {
+          fillScale = canvasW / (canvasH * mediaRatio);
+        }
+
         updateItem(item.id, {
           mediaWidth: img.naturalWidth,
-          mediaHeight: img.naturalHeight
+          mediaHeight: img.naturalHeight,
+          transform: {
+            ...item.transform,
+            scaleX: fillScale,
+            scaleY: fillScale,
+          }
         });
       }
     }
