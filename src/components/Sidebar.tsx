@@ -10,34 +10,42 @@ import {
   Share2,
   Settings,
   Zap,
+  Clock,
 } from "lucide-react";
 
 const menuItems = [
   { icon: Home, label: "Dashboard", href: "/dashboard" },
   { icon: Sparkles, label: "Roteiro & IA", href: "/script" },
-  { icon: Factory, label: "Criação em Massa", href: "/mass-production" },
+  { icon: Factory, label: "Criacao em Massa", href: "/mass-production" },
   { icon: Scissors, label: "Editor", href: "/editor" },
-  { icon: Share2, label: "Publicação", href: "/publish" },
-  { icon: Settings, label: "Configurações", href: "/settings" },
+  { icon: Share2, label: "Publicacao", href: "/publish" },
+  { icon: Clock, label: "Historico", href: "/history" },
+];
+
+const bottomItems = [
+  { icon: Settings, label: "Configuracoes", href: "/settings" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-16 h-screen shrink-0 bg-[#1c1c28] border-r border-gray-800 flex flex-col">
+    <aside className="w-[72px] h-screen shrink-0 bg-[var(--secondary)] border-r border-[var(--border-subtle)] flex flex-col relative">
+      {/* Ambient glow */}
+      <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[var(--primary)]/5 to-transparent pointer-events-none" />
+
       {/* Logo */}
-      <div className="h-16 flex items-center justify-center border-b border-gray-800 shrink-0">
+      <div className="h-16 flex items-center justify-center border-b border-[var(--border-subtle)] shrink-0 relative z-10">
         <Link href="/dashboard">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--primary)] to-[var(--accent-pink)] flex items-center justify-center">
-            <Zap className="w-5 h-5 text-white" />
+          <div className="w-11 h-11 rounded-[14px] bg-gradient-to-br from-[var(--primary)] to-[var(--accent-pink)] flex items-center justify-center shadow-lg shadow-[var(--primary)]/20 hover:shadow-[var(--primary)]/40 transition-shadow duration-300">
+            <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
           </div>
         </Link>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4">
-        <ul className="space-y-1 px-2">
+      <nav className="flex-1 py-4 px-2.5 relative z-10">
+        <ul className="space-y-1.5">
           {menuItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -45,19 +53,49 @@ export default function Sidebar() {
                 <Link
                   href={item.href}
                   title={item.label}
-                  className={`flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-200 ${
+                  className={`group relative flex items-center justify-center w-[48px] h-[48px] rounded-[12px] transition-all duration-300 ${
                     isActive
-                      ? "bg-gradient-to-r from-[var(--primary)]/20 to-[var(--accent-pink)]/20 border border-[var(--primary)]/30 text-[var(--primary)]"
-                      : "text-gray-400 hover:bg-[#2a2a3a] hover:text-white"
+                      ? "bg-gradient-to-br from-[var(--primary)]/20 to-[var(--accent-pink)]/10 text-[var(--primary)] shadow-lg shadow-[var(--primary)]/10"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-white"
                   }`}
                 >
-                  <item.icon className="w-5 h-5" />
+                  {isActive && (
+                    <div className="absolute -left-[11px] w-[3px] h-5 bg-gradient-to-b from-[var(--primary)] to-[var(--accent-pink)] rounded-r-full" />
+                  )}
+                  <item.icon className={`w-[18px] h-[18px] transition-transform duration-300 ${isActive ? "" : "group-hover:scale-110"}`} strokeWidth={isActive ? 2.2 : 1.8} />
                 </Link>
               </li>
             );
           })}
         </ul>
       </nav>
+
+      {/* Bottom */}
+      <div className="px-2.5 pb-4 border-t border-[var(--border-subtle)] pt-3 relative z-10">
+        <ul className="space-y-1.5">
+          {bottomItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  title={item.label}
+                  className={`group relative flex items-center justify-center w-[48px] h-[48px] rounded-[12px] transition-all duration-300 ${
+                    isActive
+                      ? "bg-gradient-to-br from-[var(--primary)]/20 to-[var(--accent-pink)]/10 text-[var(--primary)]"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-white"
+                  }`}
+                >
+                  {isActive && (
+                    <div className="absolute -left-[11px] w-[3px] h-5 bg-gradient-to-b from-[var(--primary)] to-[var(--accent-pink)] rounded-r-full" />
+                  )}
+                  <item.icon className={`w-[18px] h-[18px] transition-transform duration-300 ${isActive ? "" : "group-hover:scale-110"}`} strokeWidth={isActive ? 2.2 : 1.8} />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </aside>
   );
 }

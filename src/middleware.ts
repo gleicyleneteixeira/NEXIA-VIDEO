@@ -29,6 +29,11 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // API routes bypass auth check (they handle auth themselves)
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return supabaseResponse;
+  }
+
   // Rotas públicas (não precisam de auth)
   const publicPaths = ["/", "/login", "/register"];
   const isPublicPath = publicPaths.includes(request.nextUrl.pathname);

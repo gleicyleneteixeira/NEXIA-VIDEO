@@ -15,7 +15,11 @@ import {
   AlertCircle,
   ExternalLink,
   Sparkles,
+  Cpu,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
+import { useOpenRouterModel } from "@/hooks/useOpenRouterModel";
 
 const aiProviders = [
   {
@@ -49,8 +53,28 @@ const aiProviders = [
 ];
 
 export default function SettingsPage() {
+  const {
+    selectedModel,
+    setSelectedModel,
+    models,
+    fetchModels,
+    isLoadingModels,
+    apiKey,
+    setApiKey,
+    apiKeys,
+    addApiKey,
+    removeApiKey,
+    defaultModel,
+    searchQuery,
+    setSearchQuery,
+    fetchError,
+  } = useOpenRouterModel();
+
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyValue, setNewKeyValue] = useState("");
+
   const [activeTab, setActiveTab] = useState("api");
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
   const [selectedProvider, setSelectedProvider] = useState("grok");
@@ -82,6 +106,7 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: "api", label: "API Keys", icon: Key },
+    { id: "models", label: "Modelos de IA", icon: Cpu },
     { id: "notifications", label: "Notificações", icon: Bell },
     { id: "preferences", label: "Preferências", icon: Palette },
     { id: "security", label: "Segurança", icon: Shield },
@@ -210,9 +235,9 @@ export default function SettingsPage() {
                         <div className="relative">
                           <input
                             type={showKeys[provider.id] ? "text" : "password"}
-                            value={apiKeys[provider.id] || ""}
+                            value={providerKeys[provider.id] || ""}
                             onChange={(e) =>
-                              setApiKeys((prev) => ({
+                              setProviderKeys((prev) => ({
                                 ...prev,
                                 [provider.id]: e.target.value,
                               }))
@@ -270,6 +295,270 @@ export default function SettingsPage() {
                   <li className="flex items-start gap-2">
                     <Check className="w-4 h-4 text-[var(--accent-green)] mt-0.5" />
                     Você pode excluir a qualquer momento
+                  </li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* AI Models Tab */}
+          {activeTab === "models" && (
+            <div className="space-y-6">
+              <div className="glass-card rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--primary)] to-[var(--accent-pink)] flex items-center justify-center">
+                    <Cpu className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold">
+                      Configurar Modelo de IA
+                    </h2>
+                    <p className="text-sm text-[var(--text-secondary)]">
+                      Escolha o modelo do OpenRouter para gerar roteiros
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-[var(--accent-green)]/10 border border-[var(--accent-green)]/20 rounded-lg p-4 mb-6">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="w-5 h-5 text-[var(--accent-green)] mt-0.5" />
+                    <div>
+                      <p className="font-medium text-[var(--accent-green)]">
+                        Modelos Gratuitos Disponíveis
+                      </p>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        Modelos gratuitos são priorizados no topo. Padrão:{" "}
+                        <span className="font-mono text-[var(--primary)]">{defaultModel}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm text-[var(--text-secondary)] mb-2 block">
+                      API Key do OpenRouter (para listar modelos)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        placeholder="sk-or-v1-..."
+                        className="input-field flex-1"
+                      />
+                      <button
+                        onClick={() => fetchModels()}
+                        disabled={isLoadingModels}
+                        className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary)]/80 transition-colors disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {isLoadingModels ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4" />
+                        )}
+                        Atualizar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-[var(--border)] pt-4">
+                    <label className="text-sm font-medium mb-2 block">
+                      Chaves de Backup (Fallback automatico)
+                    </label>
+                    <p className="text-xs text-[var(--text-secondary)] mb-3">
+                      Se uma chave falhar, o sistema usa a proxima automaticamente.
+                    </p>
+
+                    {apiKeys.length > 0 && (
+                      <div className="space-y-2 mb-3">
+                        {apiKeys.map((key, i) => (
+                          <div key={key} className="flex items-center gap-2 p-2 rounded-lg bg-[var(--surface)] border border-[var(--border)]">
+                            <span className="text-xs text-[var(--text-secondary)] w-6">#{i + 1}</span>
+                            <span className="text-sm font-mono flex-1 truncate">...{key.slice(-8)}</span>
+                            <button
+                              onClick={() => removeApiKey(key)}
+                              className="text-xs text-[var(--danger)] hover:text-[var(--danger)]/80 px-2 py-1"
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={newKeyValue}
+                        onChange={(e) => setNewKeyValue(e.target.value)}
+                        placeholder="Adicionar nova chave sk-or-v1-..."
+                        className="input-field flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && newKeyValue.trim()) {
+                            addApiKey(newKeyValue.trim());
+                            setNewKeyValue("");
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          if (newKeyValue.trim()) {
+                            addApiKey(newKeyValue.trim());
+                            setNewKeyValue("");
+                          }
+                        }}
+                        disabled={!newKeyValue.trim()}
+                        className="px-4 py-2 bg-[var(--accent-green)]/20 text-[var(--accent-green)] border border-[var(--accent-green)]/30 rounded-lg hover:bg-[var(--accent-green)]/30 transition-colors disabled:opacity-50 whitespace-nowrap text-sm font-medium"
+                      >
+                        + Adicionar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-[var(--text-secondary)] mb-2 block">
+                      Buscar Modelo
+                    </label>
+                    <div className="relative mb-2">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Pesquisar modelo (ex: gemini, free, claude, deepseek)..."
+                        className="input-field w-full pl-10"
+                      />
+                      <svg
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {isLoadingModels && (
+                    <div className="flex items-center justify-center py-8 gap-2 text-[var(--text-secondary)]">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Carregando modelos...</span>
+                    </div>
+                  )}
+
+                  {fetchError && !isLoadingModels && (
+                    <div className="bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/20 rounded-lg p-4 text-center">
+                      <p className="text-[var(--accent-red)] text-sm">{fetchError}</p>
+                      <button
+                        onClick={() => fetchModels()}
+                        className="mt-2 text-sm text-[var(--primary)] hover:underline"
+                      >
+                        Tentar novamente
+                      </button>
+                    </div>
+                  )}
+
+                  {!isLoadingModels && !fetchError && (
+                    <div className="max-h-80 overflow-y-auto border border-[var(--border)] rounded-xl divide-y divide-[var(--border)]">
+                      {models.map((model, index) => (
+                        <button
+                          key={model.id}
+                          onClick={() => setSelectedModel(model.id)}
+                          className={`w-full text-left px-4 py-3 transition-colors flex items-center gap-3 ${
+                            selectedModel === model.id
+                              ? "bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]"
+                              : "hover:bg-[var(--surface-hover)] border-l-2 border-transparent"
+                          }`}
+                        >
+                          {index < 3 && (
+                            <span className={`w-6 h-6 rounded-full text-[11px] font-bold flex items-center justify-center flex-shrink-0 ${
+                              index === 0 ? "bg-yellow-500/20 text-yellow-400"
+                              : index === 1 ? "bg-gray-400/20 text-gray-300"
+                              : "bg-orange-500/20 text-orange-400"
+                            }`}>
+                              {index + 1}
+                            </span>
+                          )}
+                          {index >= 3 && (
+                            <span className="w-6 h-6 rounded-full text-[11px] font-medium flex items-center justify-center flex-shrink-0 bg-[var(--surface)] text-[var(--text-secondary)] border border-[var(--border)]">
+                              {index + 1}
+                            </span>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-sm font-semibold truncate ${
+                                  selectedModel === model.id
+                                    ? "text-[var(--primary)]"
+                                    : "text-white"
+                                }`}
+                              >
+                                {model.name || model.id}
+                              </span>
+                              {model.isFree && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--accent-green)]/20 text-[var(--accent-green)] whitespace-nowrap">
+                                  GRÁTIS
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-[var(--text-secondary)] font-mono block mt-0.5 select-all">
+                              {model.id}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-xs font-mono whitespace-nowrap flex-shrink-0 ${
+                              model.isFree
+                                ? "text-[var(--accent-green)]"
+                                : "text-[var(--text-secondary)]"
+                            }`}
+                          >
+                            {model.displayPrice}
+                          </span>
+                        </button>
+                      ))}
+
+                      {models.length === 0 && searchQuery && (
+                        <div className="py-8 text-center text-[var(--text-secondary)]">
+                          Nenhum modelo encontrado para &quot;{searchQuery}&quot;
+                        </div>
+                      )}
+
+                      {models.length === 0 && !searchQuery && (
+                        <div className="py-8 text-center text-[var(--text-secondary)]">
+                          Nenhum modelo disponível
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="glass-card rounded-xl p-6">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-[var(--accent-orange)]" />
+                  Dicas
+                </h3>
+                <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-[var(--accent-green)] mt-0.5" />
+                    Modelos ranqueados por popularidade semanal do OpenRouter
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-[var(--accent-green)] mt-0.5" />
+                    Copie e cole o ID do modelo direto do OpenRouter para buscar
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-[var(--accent-green)] mt-0.5" />
+                    Modelos GRÁTIS priorizados na geração automática
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-[var(--accent-green)] mt-0.5" />
+                    A API Key é salva apenas no seu navegador
                   </li>
                 </ul>
               </div>

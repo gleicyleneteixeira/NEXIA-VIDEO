@@ -42,7 +42,12 @@ export default function LoginPage() {
         router.refresh();
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Erro ao autenticar");
+      const msg = err instanceof Error ? err.message : "Erro ao autenticar";
+      if (msg.includes("Failed to fetch") || msg.includes("ERR_CONNECTION_TIMED_OUT") || msg.includes("NetworkError")) {
+        setError("Servico temporariamente indisponivel. Verifique sua conexao com a internet e tente novamente em alguns minutos.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

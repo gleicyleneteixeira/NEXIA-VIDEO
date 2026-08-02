@@ -21,9 +21,7 @@ export interface VideoBlock {
 
 export interface Variation {
   id: string;
-  hook: VideoBlock;
-  body: VideoBlock;
-  cta: VideoBlock;
+  blocks: VideoBlock[];
   expectedDuration: number;
 }
 
@@ -101,28 +99,36 @@ export async function initFFmpeg(
 }
 
 /**
- * Gera a matriz de combinações
+ * Gera a matriz de combinações (suporta 3 ou 4 blocos)
  */
 export function generateMatrix(
-  hooks: VideoBlock[],
-  bodies: VideoBlock[],
-  ctas: VideoBlock[]
+  ...categories: VideoBlock[][]
 ): Variation[] {
-  const variations: Variation[] = [];
+  if (categories.length < 2) return [];
 
-  hooks.forEach((h, hIndex) => {
-    bodies.forEach((b, bIndex) => {
-      ctas.forEach((c, cIndex) => {
-        variations.push({
-          id: `var_${hIndex + 1}_${bIndex + 1}_${cIndex + 1}`,
-          hook: h,
-          body: b,
-          cta: c,
-          expectedDuration: h.duration + b.duration + c.duration,
-        });
-      });
+  const variations: Variation[] = [];
+  const indices = categories.map(() => 0);
+
+  const totalCombos = categories.reduce((acc, cat) => acc * cat.length, 1);
+
+  for (let i = 0; i < totalCombos; i++) {
+    const blocks = categories.map((cat, catIdx) => cat[indices[catIdx]]);
+    const idParts = indices.map((idx) => idx + 1).join("_");
+    const expectedDuration = blocks.reduce((acc, b) => acc + b.duration, 0);
+
+    variations.push({
+      id: `var_${idParts}`,
+      blocks,
+      expectedDuration,
     });
-  });
+
+    // Increment indices
+    for (let j = indices.length - 1; j >= 0; j--) {
+      indices[j]++;
+      if (indices[j] < categories[j].length) break;
+      indices[j] = 0;
+    }
+  }
 
   return variations;
 }
@@ -140,74 +146,74 @@ async function readFileToArray(fileOrBlob: File | Blob): Promise<Uint8Array> {
 
 export type RenderMode = "fast" | "compatibility";
 
+export type VideoFormat = {
+  label: string;
+  width: number;
+  height: number;
+  value: string;
+};
+
+export const VIDEO_FORMATS: VideoFormat[] = [
+  { label: "9:16 Vertical", width: 1080, height: 1920, value: "9:16" },
+  { label: "16:9 Horizontal", width: 1920, height: 1080, value: "16:9" },
+  { label: "1:1 Quadrado", width: 1080, height: 1080, value: "1:1" },
+  { label: "4:5 Retrato", width: 1080, height: 1350, value: "4:5" },
+];
+
 /**
- * Concatena 3 vídeos usando FFmpeg.wasm
- * Aceita File ou Blob diretamente (lê da memória, sem fetch)
- * mode: 'fast' = -c copy (rápido), 'compatibility' = re-encode (lento mas compatível)
+ * Concatena vídeos usando FFmpeg.wasm (suporta 3 ou 4 blocos)
+ * Aceita array dinâmico de File/Blob
  */
 export async function concatenateVideosFFmpeg(
-  hookInput: File | Blob,
-  bodyInput: File | Blob,
-  ctaInput: File | Blob,
+  inputs: (File | Blob)[],
   outputFilename: string,
   onProgress?: (progress: number) => void,
-  mode: RenderMode = "fast"
+  mode: RenderMode = "fast",
+  format: VideoFormat = VIDEO_FORMATS[0],
+  transition: "none" | "fade" | "wipe" = "none",
+  transitionDuration: number = 0.5
 ): Promise<ConcatenateResult> {
   const ffmpeg = await initFFmpeg(onProgress);
-
-  const hookFile = "hook.mp4";
-  const bodyFile = "body.mp4";
-  const ctaFile = "cta.mp4";
+  const n = inputs.length;
+  const fileNames = inputs.map((_, i) => `input_${i}.mp4`);
   const outputFile = outputFilename || "output.mp4";
   const concatList = "concat.txt";
 
   try {
     if (onProgress) onProgress(10);
 
-    // Validar arquivos de entrada
-    console.log("[FFmpeg] Validating input files...");
-    if (hookInput instanceof File) console.log("Hook size:", hookInput.size);
-    if (bodyInput instanceof File) console.log("Body size:", bodyInput.size);
-    if (ctaInput instanceof File) console.log("CTA size:", ctaInput.size);
-
-    if (
-      (hookInput instanceof File && hookInput.size === 0) ||
-      (bodyInput instanceof File && bodyInput.size === 0) ||
-      (ctaInput instanceof File && ctaInput.size === 0)
-    ) {
-      throw new Error("Um ou mais arquivos de mídia selecionados estão vazios (0 bytes) ou revogados da memória.");
+    // Validar e ler cada arquivo de entrada
+    for (let i = 0; i < n; i++) {
+      const input = inputs[i];
+      console.log(`[FFmpeg] Reading input ${i + 1}/${n}...`);
+      if (input instanceof File && input.size === 0) {
+        throw new Error(`Arquivo ${input.name} está vazio (0 bytes).`);
+      }
+      const data = await readFileToArray(input);
+      if (data.byteLength === 0) throw new Error(`Input ${i + 1} data is empty (0 bytes)`);
+      await ffmpeg.writeFile(fileNames[i], data);
+      if (onProgress) onProgress(10 + Math.round((i + 1) / n * 40));
     }
 
-    console.log("[FFmpeg] Reading hook video...");
-    const hookData = await readFileToArray(hookInput);
-    if (hookData.byteLength === 0) throw new Error("Hook video data is empty (0 bytes)");
-    await ffmpeg.writeFile(hookFile, hookData);
-
-    if (onProgress) onProgress(25);
-    console.log("[FFmpeg] Reading body video...");
-    const bodyData = await readFileToArray(bodyInput);
-    if (bodyData.byteLength === 0) throw new Error("Body video data is empty (0 bytes)");
-    await ffmpeg.writeFile(bodyFile, bodyData);
-
-    if (onProgress) onProgress(40);
-    console.log("[FFmpeg] Reading CTA video...");
-    const ctaData = await readFileToArray(ctaInput);
-    if (ctaData.byteLength === 0) throw new Error("CTA video data is empty (0 bytes)");
-    await ffmpeg.writeFile(ctaFile, ctaData);
-
-    if (onProgress) onProgress(50);
-
-    // Step 2: Create concat list file
-    const concatContent = `file '${hookFile}'
-file '${bodyFile}'
-file '${ctaFile}'`;
+    // Create concat list
+    const concatContent = fileNames.map(f => `file '${f}'`).join("\n");
     await ffmpeg.writeFile(concatList, concatContent);
 
     if (onProgress) onProgress(55);
-    console.log(`[FFmpeg] Concatenating (mode: ${mode})...`);
+    console.log(`[FFmpeg] Concatenating ${n} videos (mode: ${mode}, format: ${format.width}x${format.height})...`);
 
-    if (mode === "fast") {
-      // Fast path: stream copy — tenta sem re-encode
+    // Probe input durations for xfade transitions
+    const durations: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const url = URL.createObjectURL(inputs[i]);
+      const dur = await getOutputDuration(url);
+      URL.revokeObjectURL(url);
+      durations.push(dur);
+    }
+
+    if (transition !== "none" && n >= 2) {
+      await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, transition, transitionDuration, durations);
+    } else if (mode === "fast") {
       try {
         await ffmpeg.exec([
           "-f", "concat",
@@ -218,7 +224,6 @@ file '${ctaFile}'`;
           "-y",
           outputFile
         ]);
-        // Valida se o output tem duração real
         const testDuration = await getOutputDuration(
           URL.createObjectURL(new Blob([await ffmpeg.readFile(outputFile) as BlobPart], { type: "video/mp4" }))
         );
@@ -229,17 +234,15 @@ file '${ctaFile}'`;
         }
       } catch (copyError) {
         console.warn("[FFmpeg] Stream copy failed, falling back to re-encode...", copyError);
-        await ffmpegReEncode(ffmpeg, hookFile, bodyFile, ctaFile, outputFile);
+        await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
       }
     } else {
-      // Compatibility path: full re-encode with filter_complex
-      await ffmpegReEncode(ffmpeg, hookFile, bodyFile, ctaFile, outputFile);
+      await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
     }
 
     if (onProgress) onProgress(85);
     console.log("[FFmpeg] Reading output...");
 
-    // Step 4: Read output file
     const outputData = await ffmpeg.readFile(outputFile);
     const outputSize = typeof outputData === "string" ? outputData.length : outputData.byteLength;
     console.log("Tamanho do vídeo final gerado:", outputSize);
@@ -248,18 +251,14 @@ file '${ctaFile}'`;
       throw new Error("O FFmpeg gerou um arquivo output.mp4 com 0 bytes.");
     }
 
-    // Step 5: Create blob from output
     const blob = new Blob([outputData as BlobPart], { type: "video/mp4" });
     const url = URL.createObjectURL(blob);
-
-    // Step 6: Get actual duration
     const duration = await getOutputDuration(url);
 
     if (onProgress) onProgress(100);
     console.log("[FFmpeg] Done! Duration:", duration);
 
-    // Cleanup files in FFmpeg filesystem
-    cleanupFiles(ffmpeg, [hookFile, bodyFile, ctaFile, concatList, outputFile]);
+    cleanupFiles(ffmpeg, [...fileNames, concatList, outputFile]);
 
     return { blob, url, duration, filename: outputFile };
   } catch (error) {
@@ -269,31 +268,85 @@ file '${ctaFile}'`;
 }
 
 /**
- * Re-encode com filter_complex — padroniza 1080x1920, H.264, AAC, faststart
+ * Re-encode com filter_complex — suporta 3 ou 4 blocos
  */
 async function ffmpegReEncode(
   ffmpeg: FFmpeg,
-  hookFile: string,
-  bodyFile: string,
-  ctaFile: string,
-  outputFile: string
+  fileNames: string[],
+  outputFile: string,
+  format: VideoFormat = VIDEO_FORMATS[0],
+  transition: "none" | "fade" | "wipe" = "none",
+  transitionDuration: number = 0.5,
+  durations: number[] = []
 ) {
-  console.log("[FFmpeg] Re-encoding with filter_complex...");
+  const { width, height } = format;
+  const n = fileNames.length;
+  console.log(`[FFmpeg] Re-encoding ${n} videos to ${width}x${height} (passthrough)...`);
+
+  // Construir filter_complex dinamicamente
+  const videoFilters: string[] = [];
+  const audioFilters: string[] = [];
+
+  for (let i = 0; i < n; i++) {
+    videoFilters.push(
+      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v${i}]`
+    );
+    audioFilters.push(
+      `[${i}:a]aformat=sample_rates=48000:channel_layouts=stereo[a${i}]`
+    );
+  }
+
+  let filterComplex = "";
+  if (transition !== "none" && n >= 2 && durations.length === n) {
+    let currentVideo = "v0";
+    let currentAudio = "a0";
+    let accumulatedTime = durations[0];
+
+    const transitionName = transition === "wipe" ? "slideleft" : "fade";
+
+    let vFilters = videoFilters.join("; ") + "; ";
+    let aFilters = audioFilters.join("; ") + "; ";
+    filterComplex = vFilters + aFilters;
+
+    for (let i = 1; i < n; i++) {
+      const nextVideo = `v${i}`;
+      const nextAudio = `a${i}`;
+      const outVideo = `v_out_${i}`;
+      const outAudio = `a_out_${i}`;
+
+      const offset = accumulatedTime - transitionDuration;
+
+      filterComplex += `[${currentVideo}][${nextVideo}]xfade=transition=${transitionName}:duration=${transitionDuration}:offset=${offset.toFixed(3)}[${outVideo}]; `;
+      filterComplex += `[${currentAudio}][${nextAudio}]acrossfade=d=${transitionDuration}:c1=tri:c2=tri[${outAudio}]; `;
+
+      currentVideo = outVideo;
+      currentAudio = outAudio;
+
+      accumulatedTime = accumulatedTime + durations[i] - transitionDuration;
+    }
+
+    // Map final outputs
+    filterComplex += `[${currentVideo}]copy[outv]; [${currentAudio}]copy[outa]`;
+  } else {
+    const concatInputs = Array.from({ length: n }, (_, i) => `[v${i}][a${i}]`).join("");
+    filterComplex = [...videoFilters, ...audioFilters, `${concatInputs}concat=n=${n}:v=1:a=1[outv][outa]`].join(";");
+  }
+
+  const inputs: string[] = [];
+  for (const f of fileNames) {
+    inputs.push("-i", f);
+  }
+
   await ffmpeg.exec([
-    "-i", hookFile,
-    "-i", bodyFile,
-    "-i", ctaFile,
-    "-filter_complex",
-    "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];" +
-    "[1:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1[v1];" +
-    "[2:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1[v2];" +
-    "[v0][0:a][v1][1:a][v2][2:a]concat=n=3:v=1:a=1[outv][outa]",
+    ...inputs,
+    "-filter_complex", filterComplex,
     "-map", "[outv]",
     "-map", "[outa]",
     "-c:v", "libx264",
     "-preset", "ultrafast",
-    "-pix_fmt", "yuv420p",
+    "-fps_mode", "passthrough",
     "-c:a", "aac",
+    "-b:a", "192k",
     "-movflags", "+faststart",
     "-y",
     outputFile
