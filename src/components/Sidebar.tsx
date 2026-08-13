@@ -11,6 +11,8 @@ import {
   Settings,
   Zap,
   Clock,
+  FileStack,
+  Paintbrush,
 } from "lucide-react";
 
 const menuItems = [
@@ -20,6 +22,8 @@ const menuItems = [
   { icon: Scissors, label: "Editor", href: "/editor" },
   { icon: Share2, label: "Publicacao", href: "/publish" },
   { icon: Clock, label: "Historico", href: "/history" },
+  { icon: FileStack, label: "Juntar PDF", href: "/pdf-merge" },
+  { icon: Paintbrush, label: "SpeedPaint", href: "/speed-paint" },
 ];
 
 const bottomItems = [

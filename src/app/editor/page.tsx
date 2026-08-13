@@ -17,12 +17,37 @@ import AnimationPanel from "@/components/editor/AnimationPanel";
 import TextPanel from "@/components/editor/TextPanel";
 import CanvasPanel from "@/components/editor/CanvasPanel";
 import TemplatesLibrary from "@/components/editor/TemplatesLibrary";
+import TTSPanel from "@/components/editor/TTSPanel";
+import BrandKitPanel from "@/components/editor/BrandKitPanel";
 import Teleprompter from "@/components/editor/Teleprompter";
 import CloudStorage from "@/components/editor/CloudStorage";
 import WatermarkPanel from "@/components/editor/WatermarkPanel";
 import MatchCut from "@/components/editor/MatchCut";
+import StickersPanel from "@/components/editor/StickersPanel";
+import SubtitlesPanel from "@/components/editor/SubtitlesPanel";
+import FiltersPanel from "@/components/editor/FiltersPanel";
+import AdjustPanel from "@/components/editor/AdjustPanel";
 
-type SidebarTab = "media" | "templates" | "text" | "effects" | "transitions" | "audio" | "animation" | "matchcut" | "teleprompter" | "watermark" | "cloud" | "canvas" | "export";
+type SidebarTab =
+  | "media"
+  | "audio"
+  | "text"
+  | "stickers"
+  | "effects"
+  | "transitions"
+  | "subtitles"
+  | "filters"
+  | "adjust"
+  | "templates"
+  | "animation"
+  | "matchcut"
+  | "teleprompter"
+  | "tts"
+  | "brand"
+  | "watermark"
+  | "cloud"
+  | "canvas"
+  | "export";
 
 export default function EditorPage() {
   const { undo, redo, canUndo, canRedo, clearSelection } = useUIStore();
@@ -69,6 +94,7 @@ export default function EditorPage() {
           kind: media.type === "image" ? "image" : media.type,
           src: media.url,
           file: media.file,
+          mediaId: media.id,
           srcInFrame: 0,
           srcOutFrame: duration,
           transform: { ...DEFAULT_TRANSFORM },
@@ -96,6 +122,43 @@ export default function EditorPage() {
     return () => window.removeEventListener("editor-media-import", handleMediaImport);
   }, [handleMediaImport]);
 
+  // Restore media persisted in IndexedDB and re-point project items to it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const files = await useMediaStore.getState().hydrate();
+      if (cancelled || files.length === 0) return;
+      const { project, updateItem } = useProjectStore.getState();
+      const mediaById = new Map(files.map((f) => [f.id, f]));
+      project.timeline.items.forEach((item) => {
+        if (item.mediaId && mediaById.has(item.mediaId)) {
+          const m = mediaById.get(item.mediaId)!;
+          if (!item.src || item.src.startsWith("blob:")) {
+            updateItem(item.id, { src: m.url, file: m.file });
+          }
+        }
+      });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // When a media file finishes uploading to MinIO/S3, point its timeline items
+  // to the permanent URL so the project survives reloads on any machine.
+  useEffect(() => {
+    const onUploaded = (e: Event) => {
+      const { mediaId, url } = (e as CustomEvent).detail as { mediaId: string; url: string };
+      if (!mediaId || !url) return;
+      const { project, updateItem } = useProjectStore.getState();
+      project.timeline.items.forEach((item) => {
+        if (item.mediaId === mediaId) {
+          updateItem(item.id, { src: url });
+        }
+      });
+    };
+    window.addEventListener("editor-media-uploaded", onUploaded);
+    return () => window.removeEventListener("editor-media-uploaded", onUploaded);
+  }, []);
+
   const handleCanvasAspectChange = useCallback((aspectRatio: string) => {
     const dims = ASPECT_RATIOS[aspectRatio as keyof typeof ASPECT_RATIOS];
     if (!dims) return;
@@ -114,15 +177,21 @@ export default function EditorPage() {
   }, [project.timeline, setProject]);
 
   const sidebarItems: { id: SidebarTab; label: string; icon: string }[] = [
-    { id: "media", label: "Mídia", icon: "M" },
+    { id: "media", label: "Mídia", icon: "📁" },
+    { id: "audio", label: "Áudio", icon: "🎵" },
+    { id: "text", label: "Texto", icon: "📝" },
+    { id: "stickers", label: "Stickers", icon: "😀" },
+    { id: "effects", label: "Efeitos", icon: "✨" },
+    { id: "transitions", label: "Transições", icon: "🔀" },
+    { id: "subtitles", label: "Legendas", icon: "📜" },
+    { id: "filters", label: "Filtros", icon: "🎨" },
+    { id: "adjust", label: "Ajuste", icon: "🎚️" },
     { id: "templates", label: "Templates", icon: "T" },
-    { id: "text", label: "Texto", icon: "X" },
-    { id: "effects", label: "Efeitos", icon: "E" },
-    { id: "transitions", label: "Transições", icon: "Z" },
-    { id: "audio", label: "Áudio", icon: "Á" },
     { id: "animation", label: "Animação", icon: "A" },
     { id: "matchcut", label: "Batidas", icon: "B" },
     { id: "teleprompter", label: "Teleprompter", icon: "P" },
+    { id: "tts", label: "Voz (TTS)", icon: "🗣" },
+    { id: "brand", label: "Marca", icon: "🎨" },
     { id: "watermark", label: "Marca d'Água", icon: "W" },
     { id: "cloud", label: "Nuvem", icon: "☁" },
     { id: "canvas", label: "Canvas", icon: "C" },
@@ -190,28 +259,34 @@ export default function EditorPage() {
                     setSidebarTab(item.id);
                     if (!sidebarOpen) setSidebarOpen(true);
                   }}
-                  className={`w-8 h-8 rounded-md flex items-center justify-center text-[9px] font-medium transition-colors ${
-                    sidebarTab === item.id && sidebarOpen
-                      ? "bg-[#8b5cf6]/20 text-[#8b5cf6]"
-                      : "text-gray-500 hover:bg-[#1e1e2e] hover:text-gray-300"
-                  }`}
-                  title={item.label}
-                >
-                  {item.icon}
+                   className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-medium transition-colors ${
+                     sidebarTab === item.id && sidebarOpen
+                       ? "bg-[#8b5cf6]/20 text-[#8b5cf6]"
+                       : "text-gray-500 hover:bg-[#1e1e2e] hover:text-gray-300"
+                   }`}
+                   title={item.label}
+                 >
+                   {item.icon}
                 </button>
               ))}
             </div>
 
             <div className="w-[280px] bg-[#0d0d16] border-r border-[#1e1e2e] overflow-hidden">
               {sidebarTab === "media" && <MediaPanel />}
-              {sidebarTab === "templates" && <TemplatesLibrary />}
+              {sidebarTab === "audio" && <AudioPanel />}
               {sidebarTab === "text" && <TextPanel />}
+              {sidebarTab === "stickers" && <StickersPanel />}
               {sidebarTab === "effects" && <EffectsPanel />}
               {sidebarTab === "transitions" && <TransitionsPanel />}
-              {sidebarTab === "audio" && <AudioPanel />}
+              {sidebarTab === "subtitles" && <SubtitlesPanel />}
+              {sidebarTab === "filters" && <FiltersPanel />}
+              {sidebarTab === "adjust" && <AdjustPanel />}
+              {sidebarTab === "templates" && <TemplatesLibrary />}
               {sidebarTab === "animation" && <AnimationPanel />}
               {sidebarTab === "matchcut" && <MatchCut />}
               {sidebarTab === "teleprompter" && <Teleprompter />}
+              {sidebarTab === "tts" && <TTSPanel />}
+              {sidebarTab === "brand" && <BrandKitPanel />}
               {sidebarTab === "watermark" && <WatermarkPanel />}
               {sidebarTab === "cloud" && <CloudStorage />}
               {sidebarTab === "canvas" && <CanvasPanel />}

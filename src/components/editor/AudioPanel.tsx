@@ -4,7 +4,9 @@ import { useState, useRef, useCallback } from "react";
 import { useProjectStore, useUIStore } from "@/lib/editor";
 import type { TimelineItem, FadeType, VoiceEffect, EQPreset } from "@/lib/editor";
 import { VOICE_EFFECTS, EQ_PRESETS, DEFAULT_AUDIO, DEFAULT_TRANSFORM, DEFAULT_FILTERS, generateId } from "@/lib/editor";
+import { withHistory } from "@/lib/editor/history";
 import { Mic, MicOff, Volume2, Music, Download, Play, Square } from "lucide-react";
+import { persistStandaloneMedia } from "@/lib/editor/media-persistence";
 
 type CollapsibleKey = "volume" | "fade" | "voice" | "eq" | "denoise" | "recorder" | "extract" | "sfx";
 
@@ -96,6 +98,7 @@ export default function AudioPanel() {
           kind: "audio",
           src: URL.createObjectURL(file),
           file,
+          mediaId: persistStandaloneMedia(file, "audio"),
           transform: { ...DEFAULT_TRANSFORM },
           filters: { ...DEFAULT_FILTERS },
           hsl: {},
@@ -111,7 +114,7 @@ export default function AudioPanel() {
           keyframes: {},
         };
 
-        addItem(newItem);
+        withHistory("Adicionar gravação", () => addItem(newItem));
         stream.getTracks().forEach((t) => t.stop());
       };
 
@@ -156,6 +159,7 @@ export default function AudioPanel() {
       name: `${selectedItem.name} (Áudio)`,
       kind: "audio",
       src: selectedItem.src,
+      mediaId: selectedItem.mediaId,
       transform: { ...DEFAULT_TRANSFORM },
       filters: { ...DEFAULT_FILTERS },
       hsl: {},
@@ -171,7 +175,7 @@ export default function AudioPanel() {
       keyframes: {},
     };
 
-    addItem(newItem);
+    withHistory("Adicionar áudio", () => addItem(newItem));
   };
 
   if (!selectedItem) {

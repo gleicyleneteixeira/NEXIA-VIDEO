@@ -109,6 +109,16 @@ export interface ChromaKey {
   spill: number;
 }
 
+// ── Remoção de fundo automática (IA) ───────────────────────
+export interface AutoCutout {
+  enabled: boolean;
+}
+
+export interface BackgroundRemoval {
+  chromaKey: ChromaKey;
+  autoCutout: AutoCutout;
+}
+
 // ── Speed ──────────────────────────────────────────────────
 export interface SpeedCurvePoint {
   frame: number;
@@ -173,6 +183,8 @@ export interface ClipAudio {
   voiceEffect: VoiceEffect;
   eqPreset: EQPreset;
   denoise: boolean;
+  /** true quando a faixa de áudio foi extraída/separada do clipe (CapCut "Extrair Áudio"). */
+  muted?: boolean;
 }
 
 // ── Text Styles ────────────────────────────────────────────
@@ -267,7 +279,9 @@ export type VideoEffectType =
   | "rain"
   | "snow"
   | "fire"
-  | "smoke";
+  | "smoke"
+  | "confetti"
+  | "heat";
 
 export interface VideoEffect {
   id: string;
@@ -292,6 +306,10 @@ export interface TimelineItem {
   thumb?: string;
   srcInFrame?: number;
   srcOutFrame?: number;
+  mediaId?: string;
+
+  // Custom per-clip accent color (CapCut-style), falls back to the kind palette
+  color?: string;
 
   transform: ClipTransform;
   filters: ClipFilters;
@@ -300,6 +318,7 @@ export interface TimelineItem {
   crop: ClipCrop;
   mask: ClipMask;
   chromaKey: ChromaKey;
+  autoCutout?: AutoCutout;
   blendMode: BlendMode;
   speed: ClipSpeed;
   animation: ClipAnimation;
@@ -396,6 +415,22 @@ export interface Timeline {
 }
 
 // ── Project ────────────────────────────────────────────────
+export interface BrandColors {
+  primary: string;
+  secondary: string;
+  accent: string;
+  text: string;
+}
+
+export interface BrandKit {
+  brandName: string;
+  colors: BrandColors;
+  font: string;
+  showNameInVisuals: boolean;
+  logoImageUrl?: string;
+  logoPadding: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -404,9 +439,24 @@ export interface Project {
   cloudId?: string;
   thumbnail?: string;
   watermark: Watermark;
+  brandKit: BrandKit;
   exportSettings: ExportSettings;
   timeline: Timeline;
 }
+
+export const DEFAULT_BRAND_KIT: BrandKit = {
+  brandName: "",
+  colors: {
+    primary: "#8b5cf6",
+    secondary: "#ec4899",
+    accent: "#22d3ee",
+    text: "#ffffff",
+  },
+  font: "Inter",
+  showNameInVisuals: true,
+  logoImageUrl: undefined,
+  logoPadding: 8,
+};
 
 // ── Defaults ───────────────────────────────────────────────
 export const DEFAULT_TRANSFORM: ClipTransform = {
@@ -549,6 +599,8 @@ export const VIDEO_EFFECTS: { id: VideoEffectType; label: string; icon: string }
   { id: "snow", label: "Neve", icon: "❄️" },
   { id: "fire", label: "Fogo", icon: "🔥" },
   { id: "smoke", label: "Fumaça", icon: "💨" },
+  { id: "confetti", label: "Confete", icon: "🎊" },
+  { id: "heat", label: "Calor", icon: "🌡️" },
 ];
 
 export const TEXT_STYLE_PRESETS: { id: TextStylePreset; label: string }[] = [
@@ -573,6 +625,7 @@ export const createDefaultProject = (): Project => {
     id: crypto.randomUUID(), name: "Novo Projeto",
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     watermark: { ...DEFAULT_WATERMARK },
+    brandKit: { ...DEFAULT_BRAND_KIT },
     exportSettings: { ...DEFAULT_EXPORT_SETTINGS },
     timeline: {
       id: crypto.randomUUID(), name: "Timeline Principal", fps: 30,
@@ -597,7 +650,7 @@ export const createDefaultItem = (partial: Partial<TimelineItem> = {}): Timeline
   id: generateId(), trackId: "", startFrame: 0, durationInFrames: 90, name: "Item",
   kind: "video", transform: { ...DEFAULT_TRANSFORM }, filters: { ...DEFAULT_FILTERS },
   hsl: {}, filterPreset: "none", crop: { ...DEFAULT_CROP }, mask: { ...DEFAULT_MASK },
-  chromaKey: { ...DEFAULT_CHROMA_KEY }, blendMode: "normal", speed: { ...DEFAULT_SPEED },
+  chromaKey: { ...DEFAULT_CHROMA_KEY }, autoCutout: { enabled: false }, blendMode: "normal", speed: { ...DEFAULT_SPEED },
   animation: { ...DEFAULT_ANIMATION }, audio: { ...DEFAULT_AUDIO }, effects: [],
   keyframes: {}, ...partial,
 });

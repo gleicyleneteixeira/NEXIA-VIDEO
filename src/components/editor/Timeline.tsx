@@ -3,23 +3,28 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import {
   Play, Pause, SkipBack, SkipForward, Scissors, Copy, Trash2,
-  Volume2, VolumeX, Eye, EyeOff, Lock, Unlock, Plus,
+  Volume2, VolumeX, Eye, EyeOff, Lock, Unlock, Plus, Magnet,
   ZoomIn, ZoomOut, Snowflake, Rewind, FlipHorizontal, FlipVertical,
-  RotateCw, Crop, AlignLeft, AlignRight, Undo2, Redo2, Bookmark, ChevronDown
+  RotateCw, Crop, AlignLeft, AlignRight,   Undo2, Redo2, Bookmark, ChevronDown, Zap, BringToFront, SendToBack, Clapperboard,
+  Video, Music2, Type, Stamp, Mic, Layers
 } from "lucide-react";
 import { useProjectStore, usePlaybackStore, useUIStore, useMediaStore } from "@/lib/editor";
-import type { TimelineItem, BeatMarker, MediaFile } from "@/lib/editor";
+import type { TimelineItem, BeatMarker, MediaFile, Project } from "@/lib/editor";
 import { DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, generateId } from "@/lib/editor";
-import { useVideoThumbnails } from "@/lib/editor/useVideoThumbnails";
+import { withHistory, snapshotProject, commitHistory } from "@/lib/editor/history";
+import TimelineClip from "./TimelineClip";
+import CoverModal from "./CoverModal";
+import VoiceoverModal from "./VoiceoverModal";
 
 const TRACK_HEIGHT = 64;
 const RULER_HEIGHT = 32;
 
 export default function Timeline() {
   const {
-    project, splitItem, removeItem, duplicateItem, updateItem, updateTrack,
+    project, splitItem, removeItem, rippleDelete, compactTrackGaps, duplicateClip, updateItem, updateTrack,
     freezeFrame, reverseItem, mirrorItem, rotateItem, addBeatMarker,
-    addTrack, removeTrack, reorderTracks, setKeyframe, removeKeyframe
+    addTrack, removeTrack, reorderTracks, setKeyframe, removeKeyframe,
+    bringTrackToFront, sendTrackToBack, extractAudioFromVideo
   } = useProjectStore();
   const { isPlaying, currentTime, togglePlayback, seekTo, setCurrentTime } = usePlaybackStore();
   const { selectedIds, select, clearSelection, zoom, zoomIn, zoomOut, undo, redo, canUndo, canRedo } = useUIStore();
@@ -33,9 +38,21 @@ export default function Timeline() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
   const [draggedTrackIndex, setDraggedTrackIndex] = useState<number | null>(null);
   const [showTransformMenu, setShowTransformMenu] = useState(false);
+  const [showVlogCutModal, setShowVlogCutModal] = useState(false);
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [voiceoverOpen, setVoiceoverOpen] = useState(false);
+  const [vlogKeepSeconds, setVlogKeepSeconds] = useState(2.0);
+  const [vlogDiscardSeconds, setVlogDiscardSeconds] = useState(0.5);
+  const [vlogMode, setVlogMode] = useState<"split" | "delete">("delete");
+  const [vlogTarget, setVlogTarget] = useState<"selected" | "track">("selected");
 
   const timeline = project.timeline;
   const pxPerFrame = zoom * 2;
+
+  const mainVideoTrackIndex = useMemo(() => {
+    const idx = timeline.trackOrder.findIndex((tid: string) => timeline.tracks[tid]?.kind === "video");
+    return idx < 0 ? 0 : idx;
+  }, [timeline.trackOrder, timeline.tracks]);
 
   const selectedItem = useMemo(() => {
     return timeline.items.find((i: TimelineItem) => selectedIds.has(i.id)) || null;
@@ -64,6 +81,177 @@ export default function Timeline() {
       });
     }
   }, [selectedItem, currentTime, updateItem]);
+
+  const syncCompatibilityFields = useCallback((item: TimelineItem, fps: number): TimelineItem => {
+    return {
+      ...item,
+      startTime: Math.round((item.startFrame * 1000) / fps),
+      duration: Math.round((item.durationInFrames * 1000) / fps),
+      mediaUrl: item.src,
+      trimStart: Math.round(((item.srcInFrame || 0) * 1000) / fps),
+      trimEnd: Math.round(((item.srcOutFrame || 0) * 1000) / fps),
+    };
+  }, []);
+
+  const handleVlogCut = useCallback(() => {
+    const oldProject = project;
+    const fps = project.timeline.fps || 30;
+    const keepFrames = Math.round(vlogKeepSeconds * fps);
+    const discardFrames = Math.round(vlogDiscardSeconds * fps);
+
+    if (keepFrames <= 0 || discardFrames <= 0) {
+      alert("Os intervalos devem ser maiores que zero.");
+      return;
+    }
+
+    let targetItems: TimelineItem[] = [];
+    if (vlogTarget === "selected") {
+      if (selectedIds.size === 0) {
+        alert("Nenhum clipe selecionado.");
+        return;
+      }
+      targetItems = project.timeline.items.filter((i) => selectedIds.has(i.id));
+    } else {
+      let targetTrackId = "";
+      if (selectedItem) {
+        targetTrackId = selectedItem.trackId;
+      } else {
+        const firstTrackId = project.timeline.trackOrder[0];
+        if (!firstTrackId) {
+          alert("Nenhuma trilha encontrada no projeto.");
+          return;
+        }
+        targetTrackId = firstTrackId;
+      }
+      targetItems = project.timeline.items.filter(
+        (i) => i.trackId === targetTrackId && (i.startFrame + i.durationInFrames) > currentTime
+      );
+    }
+
+    if (targetItems.length === 0) {
+      alert("Nenhum clipe encontrado para processar.");
+      return;
+    }
+
+    const processItem = (item: TimelineItem, startFromFrame: number) => {
+      const clipStart = item.startFrame;
+      const cutStartOffset = Math.max(0, startFromFrame - clipStart);
+      if (cutStartOffset >= item.durationInFrames) {
+        return { newClips: [item], totalRemovedFrames: 0 };
+      }
+
+      const speedRate = item.speed?.rate || 1;
+      const newClips: TimelineItem[] = [];
+      let totalRemovedFrames = 0;
+
+      if (cutStartOffset > 0) {
+        const preCutDur = cutStartOffset;
+        const preCutItem = {
+          ...item,
+          id: generateId(),
+          durationInFrames: preCutDur,
+          srcOutFrame: (item.srcInFrame || 0) + Math.round(preCutDur * speedRate),
+        };
+        newClips.push(syncCompatibilityFields(preCutItem, fps));
+      }
+
+      let t = cutStartOffset;
+      while (t < item.durationInFrames) {
+        const keepEnd = Math.min(t + keepFrames, item.durationInFrames);
+        const segmentDur = keepEnd - t;
+        if (segmentDur > 0) {
+          const keepItem = {
+            ...item,
+            id: generateId(),
+            startFrame: item.startFrame + t - totalRemovedFrames,
+            durationInFrames: segmentDur,
+            srcInFrame: (item.srcInFrame || 0) + Math.round(t * speedRate),
+            srcOutFrame: (item.srcInFrame || 0) + Math.round(keepEnd * speedRate),
+          };
+          newClips.push(syncCompatibilityFields(keepItem, fps));
+        }
+
+        const discardEnd = Math.min(keepEnd + discardFrames, item.durationInFrames);
+        const discardDur = discardEnd - keepEnd;
+        if (discardDur > 0) {
+          if (vlogMode === "split") {
+            const discardItem = {
+              ...item,
+              id: generateId(),
+              startFrame: item.startFrame + keepEnd - totalRemovedFrames,
+              durationInFrames: discardDur,
+              srcInFrame: (item.srcInFrame || 0) + Math.round(keepEnd * speedRate),
+              srcOutFrame: (item.srcInFrame || 0) + Math.round(discardEnd * speedRate),
+            };
+            newClips.push(syncCompatibilityFields(discardItem, fps));
+          } else {
+            totalRemovedFrames += discardDur;
+          }
+        }
+        t = discardEnd;
+      }
+
+      let runningStart = item.startFrame;
+      const alignedClips = newClips.map((clip) => {
+        const c = { ...clip, startFrame: runningStart };
+        runningStart += clip.durationInFrames;
+        return syncCompatibilityFields(c, fps);
+      });
+
+      return { newClips: alignedClips, totalRemovedFrames };
+    };
+
+    const sortedTargets = [...targetItems].sort((a, b) => a.startFrame - b.startFrame);
+    let updatedItems = [...project.timeline.items];
+
+    for (const item of sortedTargets) {
+      const currentItemIndex = updatedItems.findIndex((i) => i.id === item.id);
+      if (currentItemIndex === -1) continue;
+      const currentItem = updatedItems[currentItemIndex];
+
+      const startFromFrame = vlogTarget === "selected" ? currentItem.startFrame : Math.max(currentItem.startFrame, currentTime);
+
+      const { newClips, totalRemovedFrames } = processItem(currentItem, startFromFrame);
+
+      updatedItems.splice(currentItemIndex, 1, ...newClips);
+
+      if (vlogMode === "delete" && totalRemovedFrames > 0) {
+        const itemEndFrame = currentItem.startFrame + currentItem.durationInFrames;
+        updatedItems = updatedItems.map((i) => {
+          if (i.trackId === currentItem.trackId && i.startFrame >= itemEndFrame - 1) {
+            return syncCompatibilityFields({
+              ...i,
+              startFrame: Math.max(0, i.startFrame - totalRemovedFrames)
+            }, fps);
+          }
+          return i;
+        });
+      }
+    }
+
+    useUIStore.getState().pushCommand({
+      name: "Corte Intervalado (Vlog)",
+      execute: () => {
+        useProjectStore.setState((s) => ({
+          project: {
+            ...s.project,
+            updatedAt: new Date().toISOString(),
+            timeline: {
+              ...s.project.timeline,
+              items: updatedItems,
+            },
+          },
+        }));
+        clearSelection();
+      },
+      undo: () => {
+        useProjectStore.setState({ project: oldProject });
+        clearSelection();
+      },
+    });
+
+    setShowVlogCutModal(false);
+  }, [project, vlogKeepSeconds, vlogDiscardSeconds, vlogMode, vlogTarget, selectedIds, selectedItem, currentTime, clearSelection, syncCompatibilityFields]);
 
   const hasAnyKeyframeAtPlayhead = useMemo(() => {
     if (!selectedItem) return false;
@@ -165,6 +353,7 @@ export default function Timeline() {
       kind: media.type === "image" ? "image" : media.type,
       src: media.url,
       file: media.file,
+      mediaId: media.id,
       srcInFrame: 0,
       srcOutFrame: duration,
       transform: { ...DEFAULT_TRANSFORM },
@@ -182,7 +371,9 @@ export default function Timeline() {
       keyframes: {},
     };
 
-    useProjectStore.getState().addItem(item);
+    withHistory("Adicionar mídia", () => {
+      useProjectStore.getState().addItem(item);
+    });
   }, [timeline]);
 
   const totalDuration = useMemo(() => {
@@ -225,6 +416,10 @@ export default function Timeline() {
     setCurrentTime(frame);
   }, [isDraggingPlayhead, pixelToFrame, setCurrentTime]);
 
+  const SNAP_PIXELS = 8;
+const historyBeforeRef = useRef<ReturnType<typeof snapshotProject> | null>(null);
+const isGestureRef = useRef(false);
+
   const handleItemMouseDown = useCallback((e: React.MouseEvent, item: TimelineItem) => {
     e.stopPropagation();
     if (e.detail === 2) return;
@@ -235,8 +430,46 @@ export default function Timeline() {
       x: e.clientX - rect.left,
       frame: item.startFrame,
     });
+    historyBeforeRef.current = snapshotProject();
     setDragItemId(item.id);
   }, [select]);
+
+  const handleSnapFrame = useCallback((frame: number, itemId: string) => {
+    const item = timeline.items.find((i: TimelineItem) => i.id === itemId);
+    if (!item) return frame;
+    const snapFrames = Math.max(1, Math.round(SNAP_PIXELS / pxPerFrame));
+    const candidates: number[] = [0];
+    // playhead
+    candidates.push(currentTime);
+    // edges of other clips on the same track
+    timeline.items.forEach((other: TimelineItem) => {
+      if (other.id === itemId || other.trackId !== item.trackId) return;
+      candidates.push(other.startFrame, other.startFrame + other.durationInFrames);
+    });
+    let best = frame;
+    let bestDist = snapFrames;
+    for (const c of candidates) {
+      const d = Math.abs(c - frame);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = c;
+      }
+    }
+    return best;
+  }, [pxPerFrame, currentTime, timeline.items]);
+
+  const handleItemDrag = useCallback((e: React.MouseEvent) => {
+    if (!dragItemId) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const contentEl = container.querySelector("[data-timeline-content]");
+    if (!contentEl) return;
+    const rect = contentEl.getBoundingClientRect();
+    const x = e.clientX - rect.left + scrollLeft - dragOffset.x;
+    const raw = pixelToFrame(Math.max(0, x));
+    const frame = handleSnapFrame(raw, dragItemId);
+    updateItem(dragItemId, { startFrame: frame });
+  }, [dragItemId, dragOffset, pixelToFrame, scrollLeft, updateItem, handleSnapFrame]);
 
   const handleItemContextMenu = useCallback((e: React.MouseEvent, item: TimelineItem) => {
     e.preventDefault();
@@ -247,37 +480,46 @@ export default function Timeline() {
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
+  // Duplica os clipes selecionados (sequential na mesma trilha ou overlay numa
+  // nova camada acima) e seleciona as cópias criadas.
+  const handleDuplicateSelection = useCallback((mode: "sequential" | "overlay") => {
+    if (selectedIds.size === 0) return;
+    const newIds: string[] = [];
+    withHistory(selectedIds.size > 1 ? "Duplicar clipes" : "Duplicar clipe", () => {
+      selectedIds.forEach((id: string) => {
+        const it = duplicateClip(id, mode);
+        if (it) newIds.push(it.id);
+      });
+    });
+    clearSelection();
+    newIds.forEach((id: string, idx: number) => select(id, idx > 0));
+  }, [selectedIds, duplicateClip, clearSelection, select]);
+
   const contextMenuActions = useMemo(() => {
     if (!contextMenu) return [];
+    const menuItem = timeline.items.find((i: TimelineItem) => i.id === contextMenu.itemId);
     return [
-      { label: "Dividir", icon: Scissors, action: () => { splitItem(contextMenu.itemId, currentTime); clearSelection(); } },
-      { label: "Duplicar", icon: Copy, action: () => { duplicateItem(contextMenu.itemId); } },
-      { label: "Congelar Frame", icon: Snowflake, action: () => { freezeFrame(contextMenu.itemId, currentTime); } },
-      { label: "Inverter", icon: Rewind, action: () => { reverseItem(contextMenu.itemId); } },
-      { label: "Espelhar Horizontal", icon: FlipHorizontal, action: () => { mirrorItem(contextMenu.itemId, "h"); } },
-      { label: "Espelhar Vertical", icon: FlipVertical, action: () => { mirrorItem(contextMenu.itemId, "v"); } },
-      { label: "Girar 90°", icon: RotateCw, action: () => { rotateItem(contextMenu.itemId, 90); } },
-      { label: "Excluir", icon: Trash2, action: () => { removeItem(contextMenu.itemId); clearSelection(); } },
+      { label: "Dividir", icon: Scissors, action: () => { withHistory("Dividir", () => splitItem(contextMenu.itemId, currentTime)); clearSelection(); } },
+      { label: "Duplicar", icon: Copy, action: () => { const holder: { item: TimelineItem | null } = { item: null }; withHistory("Duplicar", () => { holder.item = duplicateClip(contextMenu.itemId, "sequential"); }); clearSelection(); if (holder.item) select(holder.item.id); } },
+      { label: "Duplicar em Camada (3D)", icon: Layers, action: () => { const holder: { item: TimelineItem | null } = { item: null }; withHistory("Duplicar em camada", () => { holder.item = duplicateClip(contextMenu.itemId, "overlay"); }); clearSelection(); if (holder.item) select(holder.item.id); } },
+      { label: "Congelar Frame", icon: Snowflake, action: () => { withHistory("Congelar frame", () => freezeFrame(contextMenu.itemId, currentTime)); } },
+      ...(menuItem?.kind === "video"
+        ? [{ label: "Extrair Áudio", icon: Music2, action: () => { withHistory("Extrair áudio", () => extractAudioFromVideo(contextMenu.itemId)); } }]
+        : []),
+      { label: "Inverter", icon: Rewind, action: () => { withHistory("Inverter", () => reverseItem(contextMenu.itemId)); } },
+      { label: "Espelhar Horizontal", icon: FlipHorizontal, action: () => { withHistory("Espelhar", () => mirrorItem(contextMenu.itemId, "h")); } },
+      { label: "Espelhar Vertical", icon: FlipVertical, action: () => { withHistory("Espelhar", () => mirrorItem(contextMenu.itemId, "v")); } },
+      { label: "Girar 90°", icon: RotateCw, action: () => { withHistory("Girar", () => rotateItem(contextMenu.itemId, 90)); } },
+      { label: "Excluir", icon: Trash2, action: () => { withHistory("Excluir item", () => rippleDelete([contextMenu.itemId])); clearSelection(); } },
     ];
-  }, [contextMenu, currentTime, splitItem, clearSelection, duplicateItem, freezeFrame, reverseItem, mirrorItem, rotateItem, removeItem]);
-
-  const handleItemDrag = useCallback((e: React.MouseEvent) => {
-    if (!dragItemId) return;
-    const container = containerRef.current;
-    if (!container) return;
-    const contentEl = container.querySelector("[data-timeline-content]");
-    if (!contentEl) return;
-    const rect = contentEl.getBoundingClientRect();
-    const x = e.clientX - rect.left + scrollLeft - dragOffset.x;
-    const frame = pixelToFrame(Math.max(0, x));
-    updateItem(dragItemId, { startFrame: frame });
-  }, [dragItemId, dragOffset, pixelToFrame, scrollLeft, updateItem]);
+  }, [contextMenu, currentTime, splitItem, clearSelection, duplicateClip, select, freezeFrame, extractAudioFromVideo, reverseItem, mirrorItem, rotateItem, rippleDelete, timeline.items]);
 
   const handleTrimLeft = useCallback((e: React.MouseEvent, item: TimelineItem) => {
     const startX = e.clientX;
     const startFrame = item.startFrame;
     const startDuration = item.durationInFrames;
     const startSrcIn = item.srcInFrame || 0;
+    const before = snapshotProject();
 
     const onMove = (ev: MouseEvent) => {
       const dx = ev.clientX - startX;
@@ -295,6 +537,7 @@ export default function Timeline() {
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      commitHistory("Ajustar início do clipe", before);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -303,16 +546,23 @@ export default function Timeline() {
   const handleTrimRight = useCallback((e: React.MouseEvent, item: TimelineItem) => {
     const startX = e.clientX;
     const startDuration = item.durationInFrames;
+    const startSrcIn = item.srcInFrame || 0;
+    const before = snapshotProject();
 
     const onMove = (ev: MouseEvent) => {
       const dx = ev.clientX - startX;
       const dFrames = pixelToFrame(dx);
       const newDuration = Math.max(1, startDuration + dFrames);
-      updateItem(item.id, { durationInFrames: newDuration });
+      // keep source window consistent: the trimmed portion = [ srcIn .. srcIn + newDuration ]
+      updateItem(item.id, {
+        durationInFrames: newDuration,
+        srcOutFrame: startSrcIn + newDuration,
+      });
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      commitHistory("Ajustar fim do clipe", before);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -343,6 +593,10 @@ export default function Timeline() {
     };
 
     const handleMouseUp = () => {
+      if (dragItemId && historyBeforeRef.current) {
+        commitHistory("Mover clipe", historyBeforeRef.current);
+        historyBeforeRef.current = null;
+      }
       setIsDraggingPlayhead(false);
       setDragItemId(null);
     };
@@ -370,12 +624,20 @@ export default function Timeline() {
         togglePlayback();
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        selectedIds.forEach((id: string) => removeItem(id));
+        e.preventDefault();
+        const ids = [...selectedIds];
+        withHistory(ids.length > 1 ? "Excluir itens" : "Excluir item", () => {
+          rippleDelete(ids);
+        });
         clearSelection();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "d" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        selectedIds.forEach((id: string) => duplicateItem(id));
+        handleDuplicateSelection("sequential");
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.altKey || e.shiftKey) && e.key === "d") {
+        e.preventDefault();
+        handleDuplicateSelection("overlay");
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
@@ -386,15 +648,17 @@ export default function Timeline() {
         if (canRedo()) redo();
       }
       if (e.key === "q" || e.key === "Q") {
-        trimStartToPlayhead();
+        withHistory("Ajustar início", () => trimStartToPlayhead());
       }
       if (e.key === "w" || e.key === "W") {
-        trimEndToPlayhead();
+        withHistory("Ajustar fim", () => trimEndToPlayhead());
       }
       if (e.key === "s" || e.key === "S" || ((e.ctrlKey || e.metaKey) && (e.key === "b" || e.key === "B"))) {
         e.preventDefault();
-        selectedIds.forEach((id: string) => {
-          splitItem(id, currentTime);
+        withHistory("Dividir", () => {
+          selectedIds.forEach((id: string) => {
+            splitItem(id, currentTime);
+          });
         });
         clearSelection();
       }
@@ -414,7 +678,7 @@ export default function Timeline() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    selectedIds, currentTime, togglePlayback, removeItem, duplicateItem,
+    selectedIds, currentTime, togglePlayback, removeItem, rippleDelete, handleDuplicateSelection,
     clearSelection, seekTo, addBeatMarker, trimStartToPlayhead, trimEndToPlayhead,
     splitItem, undo, redo, canUndo, canRedo
   ]);
@@ -448,11 +712,32 @@ export default function Timeline() {
 
         <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
 
+        <button
+          onClick={() => setVoiceoverOpen(true)}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-[#f472b6] hover:text-pink-300"
+          title="Gravar narração (voz)"
+        >
+          <Mic size={14} />
+        </button>
+
+        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
+
         <button onClick={undo} disabled={!canUndo()} className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30" title="Desfazer (Ctrl+Z)">
           <Undo2 size={14} />
         </button>
         <button onClick={redo} disabled={!canRedo()} className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30" title="Refazer (Ctrl+Y / Ctrl+Shift+Z)">
           <Redo2 size={14} />
+        </button>
+
+        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
+
+        <button
+          onClick={() => withHistory("Fechar espaços em branco", () => compactTrackGaps())}
+          disabled={project.timeline.items.length === 0}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
+          title="Fechar espaços em branco (une os clipes, sem vãos)"
+        >
+          <Magnet size={14} />
         </button>
 
         <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
@@ -464,6 +749,22 @@ export default function Timeline() {
           title="Cortar no playhead (Dividir) (S / Ctrl+B)"
         >
           <Scissors size={14} />
+        </button>
+        <button
+          onClick={() => handleDuplicateSelection("sequential")}
+          disabled={selectedIds.size === 0}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
+          title="Duplicar clipes selecionados (Ctrl+D)"
+        >
+          <Copy size={14} />
+        </button>
+        <button
+          onClick={() => handleDuplicateSelection("overlay")}
+          disabled={selectedIds.size === 0}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 disabled:opacity-30"
+          title="Duplicar em nova camada acima (sobreposição/3D) (Ctrl+Shift+D)"
+        >
+          <Layers size={14} />
         </button>
         <button
           onClick={trimStartToPlayhead}
@@ -482,7 +783,7 @@ export default function Timeline() {
           <AlignRight size={14} />
         </button>
         <button
-          onClick={() => { selectedIds.forEach((id: string) => removeItem(id)); clearSelection(); }}
+          onClick={() => { withHistory(selectedIds.size > 1 ? "Excluir itens" : "Excluir item", () => rippleDelete([...selectedIds])); clearSelection(); }}
           disabled={selectedIds.size === 0}
           className="p-1.5 hover:bg-red-900/30 rounded text-red-400 disabled:opacity-30"
           title="Excluir (Delete / Backspace)"
@@ -506,6 +807,14 @@ export default function Timeline() {
           title="Recortar (Crop)"
         >
           <Crop size={14} />
+        </button>
+        <button
+          onClick={() => setShowVlogCutModal(true)}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 flex items-center gap-1"
+          title="Corte Intervalado / Vlog Cut (Corte Automático)"
+        >
+          <Zap size={14} className="text-yellow-500" />
+          <span className="text-[10px] font-semibold text-gray-300">Vlog Cut</span>
         </button>
 
         <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
@@ -626,9 +935,16 @@ export default function Timeline() {
                   onDragOver={handleTrackDragOver}
                   onDrop={(e) => handleTrackDropOnTrack(e, idx)}
                 >
-                  <span className="flex-1 text-xs text-[#a0a0b0] truncate font-medium flex items-center gap-1">
-                    <span className="text-gray-600 text-[10px] select-none">☰</span>
-                    {track.name}
+                  <span className="flex-1 flex items-center gap-1 min-w-0" title={track.name}>
+                    {track.kind === "video" ? (
+                      <Video size={13} className="text-[#9aa4b2] shrink-0" />
+                    ) : track.kind === "audio" ? (
+                      <Music2 size={13} className="text-[#4ade80] shrink-0" />
+                    ) : track.kind === "text" ? (
+                      <Type size={13} className="text-[#fb923c] shrink-0" />
+                    ) : (
+                      <Stamp size={13} className="text-[#a78bfa] shrink-0" />
+                    )}
                   </span>
                   <button
                     onClick={() => updateTrack(trackId, { hidden: !track.hidden })}
@@ -660,10 +976,47 @@ export default function Timeline() {
                       <Trash2 size={10} />
                     </button>
                   )}
+                  {timeline.trackOrder.length > 1 && (
+                    <button
+                      onClick={() => withHistory("Trazer p/ frente", () => bringTrackToFront(trackId))}
+                      title="Trazer para a frente"
+                      className="p-0.5 hover:bg-white/10 rounded text-gray-600 hover:text-[#8b5cf6]"
+                    >
+                      <BringToFront size={10} />
+                    </button>
+                  )}
+                  {timeline.trackOrder.length > 1 && (
+                    <button
+                      onClick={() => withHistory("Mandar p/ trás", () => sendTrackToBack(trackId))}
+                      title="Mandar para trás"
+                      className="p-0.5 hover:bg-white/10 rounded text-gray-600 hover:text-[#8b5cf6]"
+                    >
+                      <SendToBack size={10} />
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
+        </div>
+
+        {/* ── Slot fixo de "Capa" (à esquerda do 00:00, alinhado à faixa principal de vídeo) ── */}
+        <div className="w-16 shrink-0 bg-[#0d0d16] border-r border-[#1e1e2e]">
+          <button
+            onClick={() => setCoverOpen(true)}
+            className="w-full flex flex-col items-center justify-center gap-1 border-b border-[#1e1e2e] hover:bg-[#1a1a28]/60 transition-colors"
+            style={{ height: TRACK_HEIGHT, marginTop: RULER_HEIGHT + mainVideoTrackIndex * TRACK_HEIGHT }}
+            title="Definir capa do projeto"
+          >
+            <span className="w-9 h-6 rounded overflow-hidden bg-black flex items-center justify-center">
+              {project.thumbnail ? (
+                <img src={project.thumbnail} alt="Capa" className="w-full h-full object-cover" />
+              ) : (
+                <Clapperboard size={14} className="text-[#8b5cf6]" />
+              )}
+            </span>
+            <span className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold">Capa</span>
+          </button>
         </div>
 
         <div
@@ -721,7 +1074,7 @@ export default function Timeline() {
                     );
                   })}
                   {items.map((item: TimelineItem) => (
-                    <TimelineItemComponent
+                    <TimelineClip
                       key={item.id}
                       item={item}
                       pxPerFrame={pxPerFrame}
@@ -766,6 +1119,165 @@ export default function Timeline() {
           ))}
         </div>
       )}
+
+      {showVlogCutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => setShowVlogCutModal(false)}>
+          <div className="w-[450px] bg-[#13131f]/95 border border-white/10 rounded-xl shadow-2xl p-5 flex flex-col gap-4 font-sans text-white text-xs" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <span className="text-sm font-semibold flex items-center gap-1.5">
+                <Zap size={16} className="text-yellow-400" />
+                Corte Intervalado (Vlog Cut)
+              </span>
+              <button
+                onClick={() => setShowVlogCutModal(false)}
+                className="text-gray-400 hover:text-white transition-colors text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {/* Alvo */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-gray-400 uppercase font-semibold">Aplicar Em</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    onClick={() => setVlogTarget("selected")}
+                    className={`py-1.5 px-3 rounded border text-center transition-all ${
+                      vlogTarget === "selected"
+                        ? "bg-purple-600/20 border-purple-500 text-purple-200"
+                        : "bg-white/5 border-white/5 text-gray-400 hover:bg-white/10"
+                    }`}
+                  >
+                    Clipe Selecionado
+                  </button>
+                  <button
+                    onClick={() => setVlogTarget("track")}
+                    className={`py-1.5 px-3 rounded border text-center transition-all ${
+                      vlogTarget === "track"
+                        ? "bg-purple-600/20 border-purple-500 text-purple-200"
+                        : "bg-white/5 border-white/5 text-gray-400 hover:bg-white/10"
+                    }`}
+                  >
+                    Trilha a partir do Playhead
+                  </button>
+                </div>
+              </div>
+
+              {/* Keep Duration */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] text-gray-400 uppercase font-semibold">
+                    Intervalo de Manutenção (Clipe)
+                  </label>
+                  <span className="text-yellow-400 font-mono font-semibold">{vlogKeepSeconds.toFixed(2)}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="30"
+                  step="0.1"
+                  value={vlogKeepSeconds}
+                  onChange={(e) => setVlogKeepSeconds(parseFloat(e.target.value))}
+                  className="w-full accent-[#8b5cf6] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex items-center gap-2 mt-0.5">
+                  <input
+                    type="number"
+                    value={vlogKeepSeconds}
+                    step="0.1"
+                    min="0.1"
+                    onChange={(e) => setVlogKeepSeconds(Math.max(0.1, parseFloat(e.target.value) || 0.1))}
+                    className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1 text-center font-mono text-white"
+                  />
+                  <span className="text-[11px] text-white/50">segundos (tempo mantido)</span>
+                </div>
+              </div>
+
+              {/* Discard Duration */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] text-gray-400 uppercase font-semibold">
+                    Intervalo de Descarte (Cortar)
+                  </label>
+                  <span className="text-red-400 font-mono font-semibold">{vlogDiscardSeconds.toFixed(2)}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.01"
+                  max="10"
+                  step="0.05"
+                  value={vlogDiscardSeconds}
+                  onChange={(e) => setVlogDiscardSeconds(parseFloat(e.target.value))}
+                  className="w-full accent-[#8b5cf6] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex items-center gap-2 mt-0.5">
+                  <input
+                    type="number"
+                    value={vlogDiscardSeconds}
+                    step="0.05"
+                    min="0.01"
+                    onChange={(e) => setVlogDiscardSeconds(Math.max(0.01, parseFloat(e.target.value) || 0.01))}
+                    className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1 text-center font-mono text-white"
+                  />
+                  <span className="text-[11px] text-white/50">segundos (tempo removido)</span>
+                </div>
+              </div>
+
+              {/* Modo de Aplicação */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-gray-400 uppercase font-semibold">Modo de Aplicação</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    onClick={() => setVlogMode("split")}
+                    className={`py-1.5 px-3 rounded border text-center transition-all ${
+                      vlogMode === "split"
+                        ? "bg-purple-600/20 border-purple-500 text-purple-200"
+                        : "bg-white/5 border-white/5 text-gray-400 hover:bg-white/10"
+                    }`}
+                  >
+                    Apenas Fatiar (Split All)
+                  </button>
+                  <button
+                    onClick={() => setVlogMode("delete")}
+                    className={`py-1.5 px-3 rounded border text-center transition-all ${
+                      vlogMode === "delete"
+                        ? "bg-purple-600/20 border-purple-500 text-purple-200"
+                        : "bg-white/5 border-white/5 text-gray-400 hover:bg-white/10"
+                    }`}
+                  >
+                    Fatiar e Deletar (Jump Cut)
+                  </button>
+                </div>
+                <p className="text-[10px] text-white/40 mt-1">
+                  {vlogMode === "split"
+                    ? "Mantém as fatias fatiadas na timeline no local original."
+                    : "Remove fatias de descarte e desloca os clipes seguintes para preencher a lacuna."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-3 mt-1">
+              <button
+                onClick={() => setShowVlogCutModal(false)}
+                className="px-4 py-1.5 rounded bg-white/5 hover:bg-white/10 transition-all font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleVlogCut}
+                className="px-4 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-semibold transition-all shadow-md shadow-purple-600/20"
+              >
+                Aplicar Corte
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CoverModal open={coverOpen} onClose={() => setCoverOpen(false)} />
+
+      <VoiceoverModal open={voiceoverOpen} onClose={() => setVoiceoverOpen(false)} />
     </div>
   );
 }
@@ -819,146 +1331,4 @@ function Ruler({ totalWidth, pxPerFrame, fps }: { totalWidth: number; pxPerFrame
   );
 }
 
-function TimelineItemComponent({
-  item,
-  pxPerFrame,
-  selected,
-  onMouseDown,
-  onContextMenu,
-  onTrimLeft,
-  onTrimRight,
-  onDragStart,
-}: {
-  item: TimelineItem;
-  pxPerFrame: number;
-  selected: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  onTrimLeft?: (e: React.MouseEvent) => void;
-  onTrimRight?: (e: React.MouseEvent) => void;
-  onDragStart?: (e: React.DragEvent) => void;
-}) {
-  const left = item.startFrame * pxPerFrame;
-  const width = Math.max(item.durationInFrames * pxPerFrame, 4);
-  const thumbnails = useVideoThumbnails(item);
 
-  const kfs = item.keyframes || {};
-  const allKfFrames = new Set<number>();
-  for (const prop of Object.keys(kfs)) {
-    const arr = kfs[prop as keyof typeof kfs];
-    if (arr) arr.forEach((kf) => allKfFrames.add(kf.frame));
-  }
-
-  const bgColor =
-    item.kind === "video"
-      ? selected
-        ? "bg-[#8b5cf6]/80"
-        : "bg-[#6d28d9]/80"
-      : item.kind === "audio"
-        ? selected
-          ? "bg-[#10b981]/80"
-          : "bg-[#059669]/80"
-        : item.kind === "text"
-          ? selected
-            ? "bg-[#ec4899]/80"
-            : "bg-[#db2777]/80"
-          : selected
-            ? "bg-[#f59e0b]/80"
-            : "bg-[#d97706]/80";
-
-  const hasSpeedBadge = item.speed.rate !== 1;
-  const hasReverseBadge = item.speed.reverse;
-  const hasEffects = item.effects.length > 0;
-  const hasAnimation = item.animation?.enter !== "none" || item.animation?.exit !== "none";
-
-  return (
-    <div
-      className={`absolute top-1 bottom-1 rounded-md cursor-grab active:cursor-grabbing border ${selected ? "border-white/40" : "border-white/10"} flex items-center overflow-visible transition-opacity hover:brightness-110`}
-      style={{ left, width }}
-      onMouseDown={onMouseDown}
-      onContextMenu={onContextMenu}
-      draggable
-      onDragStart={onDragStart}
-    >
-      {onTrimLeft && (
-        <div
-          className="absolute left-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-l-md bg-white/10"
-          onMouseDown={(e) => { e.stopPropagation(); onTrimLeft(e); }}
-        />
-      )}
-
-      {thumbnails.length > 0 ? (
-        <div className="absolute inset-0 flex overflow-hidden rounded-md">
-          {thumbnails.map((thumb, idx) => (
-            <div
-              key={idx}
-              className="h-full flex-shrink-0 bg-black/30"
-              style={{
-                width: `${100 / thumbnails.length}%`,
-                backgroundImage: `url(${thumb.url})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }}
-            />
-          ))}
-        </div>
-      ) : item.thumb ? (
-        <div className="absolute inset-0 opacity-30 overflow-hidden rounded-md">
-          <img src={item.thumb} alt="" className="w-full h-full object-cover" />
-        </div>
-      ) : (
-        <div className={`absolute inset-0 ${bgColor} rounded-md`} />
-      )}
-
-      {allKfFrames.size > 0 && (
-        <div className="absolute inset-0 pointer-events-none z-15">
-          {Array.from(allKfFrames).map((frame) => {
-            const x = (frame / item.durationInFrames) * 100;
-            return (
-              <div
-                key={frame}
-                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2"
-                style={{ left: `${x}%` }}
-              >
-                <div className="w-2 h-2 bg-yellow-400 rotate-45 border border-yellow-600 shadow-sm" />
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="relative z-10 px-2 flex items-center gap-1 min-w-0">
-        <span className="text-[10px] text-white/90 truncate font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-          {item.name}
-        </span>
-        {hasSpeedBadge && (
-          <span className="text-[8px] bg-yellow-500/30 text-yellow-300 px-1 rounded font-bold leading-none">
-            {item.speed.rate}x
-          </span>
-        )}
-        {hasReverseBadge && (
-          <span className="text-[8px] bg-blue-500/30 text-blue-300 px-1 rounded font-bold leading-none">
-            ⟲
-          </span>
-        )}
-        {hasEffects && (
-          <span className="text-[8px] bg-purple-500/30 text-purple-300 px-1 rounded font-bold leading-none">
-            ✦
-          </span>
-        )}
-        {hasAnimation && (
-          <span className="text-[8px] bg-cyan-500/30 text-cyan-300 px-1 rounded font-bold leading-none">
-            ▶
-          </span>
-        )}
-      </div>
-
-      {onTrimRight && (
-        <div
-          className="absolute right-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-r-md bg-white/10"
-          onMouseDown={(e) => { e.stopPropagation(); onTrimRight(e); }}
-        />
-      )}
-    </div>
-  );
-}

@@ -5,7 +5,7 @@ import { useProjectStore, useUIStore } from "@/lib/editor";
 import type { TimelineItem, ClipFilters, FilterPreset, BlendMode, ClipMask, ChromaKey, VideoEffect, HSLAdjustment } from "@/lib/editor";
 import { DEFAULT_FILTERS, DEFAULT_MASK, DEFAULT_CHROMA_KEY, FILTER_PRESETS, HSL_COLORS, VIDEO_EFFECTS } from "@/lib/editor";
 import { generateId } from "@/lib/editor";
-import { Sparkles, Eye, EyeOff, Plus, Trash2, Palette } from "lucide-react";
+import { Sparkles, Eye, EyeOff, Plus, Trash2, Palette, Droplet } from "lucide-react";
 
 const BLEND_MODES: { value: BlendMode; label: string }[] = [
   { value: "normal", label: "Normal" },
@@ -25,7 +25,7 @@ const BLEND_MODES: { value: BlendMode; label: string }[] = [
 const MASK_SHAPES = ["circle", "rectangle", "diamond", "film"] as const;
 
 export default function EffectsPanel() {
-  const { project, updateItem, setFilterPreset, setBlendMode, setMask, setChromaKey, addEffect, removeEffect, toggleEffect } = useProjectStore();
+  const { project, updateItem, setFilterPreset, setBlendMode, setMask, setChromaKey, setAutoCutout, addEffect, removeEffect, toggleEffect } = useProjectStore();
   const { selectedIds } = useUIStore();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -212,24 +212,58 @@ export default function EffectsPanel() {
           </div>
         )}
 
-        {/* Chroma Key */}
-        <SectionHeader title="Chroma Key" collapsed={!!collapsed["chroma"]} onToggle={() => toggle("chroma")} />
-        {!collapsed["chroma"] && (
-          <div className="p-3 border-b border-[#1a1a28] space-y-2">
-            <ToggleRow label="Ativar Chroma Key" value={(selectedItem.chromaKey?.enabled ?? false)} onChange={(v) => setChromaKey(selectedItem.id, { enabled: v })} />
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-1">Cor</label>
-              <input
-                type="color"
-                value={(selectedItem.chromaKey?.color ?? "#00ff00")}
-                onChange={(e) => setChromaKey(selectedItem.id, { color: e.target.value })}
-                className="w-full h-7 bg-[#13131f] border border-[#1e1e2e] rounded cursor-pointer"
-              />
-            </div>
-            <Slider label="Intensidade" value={(selectedItem.chromaKey?.intensity ?? 0.5)} onChange={(v) => setChromaKey(selectedItem.id, { intensity: v })} min={0} max={1} step={0.05} />
-            <Slider label="Sombra" value={(selectedItem.chromaKey?.shadow ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { shadow: v })} min={0} max={1} step={0.05} />
-            <Slider label="Pena" value={(selectedItem.chromaKey?.feather ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { feather: v })} min={0} max={20} step={0.5} />
-            <Slider label="Spill" value={(selectedItem.chromaKey?.spill ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { spill: v })} min={0} max={1} step={0.05} />
+        {/* Remoção de Fundo */}
+        <SectionHeader title="Remover Fundo" collapsed={!!collapsed["bgRemove"]} onToggle={() => toggle("bgRemove")} />
+        {!collapsed["bgRemove"] && (
+          <div className="p-3 border-b border-[#1a1a28] space-y-3">
+            <ToggleRow
+              label="Chroma Key"
+              value={(selectedItem.chromaKey?.enabled ?? false)}
+              onChange={(v) => {
+                setChromaKey(selectedItem.id, { enabled: v, color: selectedItem.chromaKey?.color ?? "#00ff00", intensity: selectedItem.chromaKey?.intensity ?? 0.5, shadow: selectedItem.chromaKey?.shadow ?? 0, feather: selectedItem.chromaKey?.feather ?? 0, spill: selectedItem.chromaKey?.spill ?? 0 });
+                if (v) setAutoCutout(selectedItem.id, { enabled: false });
+              }}
+            />
+            {(selectedItem.chromaKey?.enabled ?? false) && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={(selectedItem.chromaKey?.color ?? "#00ff00")}
+                    onChange={(e) => setChromaKey(selectedItem.id, { color: e.target.value })}
+                    className="w-full h-8 bg-[#13131f] border border-[#1e1e2e] rounded cursor-pointer"
+                  />
+                  <button
+                    onClick={() => window.dispatchEvent(new CustomEvent("chroma-pick-begin", { detail: { id: selectedItem.id } }))}
+                    className="shrink-0 h-8 px-2.5 rounded border border-[#1e1e2e] bg-[#13131f] text-gray-400 hover:text-white hover:border-[#8b5cf6] text-[10px] flex items-center gap-1"
+                    title="Clique no vídeo para escolher a cor"
+                  >
+                    <Droplet size={12} /> Conta-gotas
+                  </button>
+                </div>
+                <Slider label="Intensidade" value={(selectedItem.chromaKey?.intensity ?? 0.5)} onChange={(v) => setChromaKey(selectedItem.id, { intensity: v })} min={0} max={1} step={0.05} />
+                <Slider label="Sombra" value={(selectedItem.chromaKey?.shadow ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { shadow: v })} min={0} max={1} step={0.05} />
+                <Slider label="Pena" value={(selectedItem.chromaKey?.feather ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { feather: v })} min={0} max={20} step={0.5} />
+                <Slider label="Spill" value={(selectedItem.chromaKey?.spill ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { spill: v })} min={0} max={1} step={0.05} />
+              </div>
+            )}
+
+            <div className="h-px bg-[#1a1a28]" />
+
+            <ToggleRow
+              label="Auto Cutout (IA)"
+              value={(selectedItem.autoCutout?.enabled ?? false)}
+              onChange={(v) => {
+                setAutoCutout(selectedItem.id, { enabled: v });
+                if (v) setChromaKey(selectedItem.id, { enabled: false });
+              }}
+            />
+            {(selectedItem.autoCutout?.enabled ?? false) && (
+              <p className="text-[10px] leading-relaxed text-gray-500">
+                Remove automaticamente a pessoa ao fundo usando MediaPipe (processado no preview, ~10 FPS).
+                Troque para <span className="text-gray-300">Chroma Key</span> se o fundo for verde/azul sólido.
+              </p>
+            )}
           </div>
         )}
 

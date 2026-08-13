@@ -139,8 +139,12 @@ export default function ExportPanel() {
   const handleExport = async () => {
     if (isExporting) return;
 
-    const videoItem = timeline.items.find((i) => i.kind === "video");
-    if (!videoItem?.file) {
+    const fpsT = timeline.fps || 30;
+    const exportItems = timeline.items
+      .filter((i) => ["video", "audio", "image", "freeze"].includes(i.kind) && i.src)
+      .sort((a, b) => a.startFrame - b.startFrame);
+
+    if (exportItems.length === 0) {
       setErrorMsg("Adicione um vídeo à timeline antes de exportar.");
       setStatus("error");
       return;
@@ -160,7 +164,7 @@ export default function ExportPanel() {
 
     setExporting(true);
     setStatus("processing");
-    setExportProgress(0);
+    setExportProgress(5);
 
     try {
       const { FFmpeg } = await import("@ffmpeg/ffmpeg");
@@ -178,20 +182,89 @@ export default function ExportPanel() {
         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
       });
 
-      const inputName = `input.${videoItem.file.name.split(".").pop()}`;
-      const outputName = `output.${selectedFormat.ext}`;
-
-      await ffmpeg.writeFile(inputName, await fetchFile(videoItem.file));
-
       const w = resolutionData.width;
       const h = resolutionData.height;
+      const outputName = `output.${selectedFormat.ext}`;
 
-      const args = [
-        "-i", inputName,
-        "-t", String(durationSeconds),
-        "-r", String(fps),
-        "-vf", `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`,
+      // Write each visible clip to disk, honoring trims + speed so the export
+      // faithfully reflects the timeline (startFrame / srcIn/srcOut / rate).
+      const files: string[] = [];
+      const inputs: string[] = [];
+      const vFilterParts: string[] = [];
+      const aFilterParts: string[] = [];
+
+      for (let idx = 0; idx < exportItems.length; idx++) {
+        const item = exportItems[idx];
+        const isImage = item.kind === "image";
+        const ext = isImage ? "png" : (item.file?.name.split(".").pop()?.toLowerCase() || "mp4");
+        const name = `input_${idx}.${ext}`;
+
+        const srcBytes = await (item.file ? fetchFile(item.file) : fetchFile(item.src));
+        setExportProgress(5 + Math.round(((idx + 0.5) / exportItems.length) * 30));
+        await ffmpeg.writeFile(name, srcBytes);
+        files.push(name);
+
+        // Source window (trim + speed): media time consumed = srcIn + dur*rate,
+        // clamped to the available source range [srcIn, srcOut].
+        const rate = item.speed?.rate ?? 1;
+        const srcInSec = (item.srcInFrame || 0) / fpsT;
+        const timelineDurSec = item.durationInFrames / fpsT;
+        const sourceNeededSec = timelineDurSec * rate;
+        const srcOutRel = item.srcOutFrame && item.srcOutFrame > (item.srcInFrame || 0)
+          ? (item.srcOutFrame - (item.srcInFrame || 0)) / fpsT
+          : sourceNeededSec;
+        const sourceTrimSec = Math.max(0.03, Math.min(sourceNeededSec, srcOutRel));
+
+        if (isImage) {
+          inputs.push("-loop", "1", "-framerate", String(fps), "-i", name);
+        } else {
+          inputs.push("-ss", srcInSec.toFixed(3), "-i", name);
+        }
+
+        vFilterParts.push(
+          `[${idx}:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p,trim=duration=${timelineDurSec.toFixed(3)},setpts=PTS-STARTPTS[v${idx}]`
+        );
+
+        if (!isImage) {
+          aFilterParts.push(
+            `[${idx}:a]aformat=sample_rates=48000,channel_layouts=stereo,atrim=duration=${timelineDurSec.toFixed(3)},asetpts=PTS-STARTPTS[a${idx}]`
+          );
+        }
+      }
+
+      // Video: concat all visual items in timeline order.
+      const videoConcat = `[${exportItems.map((_, i) => `v${i}`).join("][")}]concat=n=${exportItems.length}:v=1:a=0[outv]`;
+
+      // Audio: concat only the items that carry an audio stream, same order.
+      const audioIndices = aFilterParts
+        .map((p) => {
+          const m = p.match(/\[(\d+):a\]/);
+          return m ? Number(m[1]) : -1;
+        })
+        .filter((i) => i >= 0);
+      const audioConcat = audioIndices.length > 0
+        ? `[${audioIndices.map((i) => `a${i}`).join("][")}]concat=n=${audioIndices.length}:v=0:a=1[outa]`
+        : "";
+
+      // Watermark: appended last so its input index = number of clip inputs.
+      let finalLabel = "outv";
+      if (watermark?.enabled && watermark.imageUrl) {
+        const watermarkData = await fetchFile(watermark.imageUrl);
+        await ffmpeg.writeFile("watermark.png", watermarkData);
+        files.push("watermark.png");
+        inputs.push("-i", "watermark.png");
+        finalLabel = "finalv";
+        vFilterParts.push(`[outv][${exportItems.length}:v]overlay=W-w-10:10[finalv]`);
+      }
+
+      const filterComplex = [...vFilterParts, videoConcat, ...(audioConcat ? [audioConcat] : [])].join(";");
+
+      const args: string[] = [
+        ...inputs,
+        "-filter_complex", filterComplex,
+        "-map", `[${finalLabel}]`,
       ];
+      if (audioConcat) args.push("-map", "[outa]");
 
       if (format === "mp4") {
         const crf = Math.round(51 - (bitrate / 50) * 33);
@@ -201,15 +274,10 @@ export default function ExportPanel() {
       } else {
         args.push("-c:v", "prores_ks", "-profile:v", "3", "-b:v", `${bitrate}M`);
       }
+      if (audioConcat) args.push("-c:a", "aac", "-b:a", "192k");
+      args.push("-r", String(fps), "-pix_fmt", "yuv420p", "-movflags", "+faststart", outputName);
 
-      if (watermark?.enabled && watermark.imageUrl) {
-        const watermarkData = await fetchFile(watermark.imageUrl);
-        await ffmpeg.writeFile("watermark.png", watermarkData);
-        args.push("-i", "watermark.png", "-filter_complex", "[0:v][1:v]overlay=W-w-10:10");
-      }
-
-      args.push("-pix_fmt", "yuv420p", "-movflags", "+faststart", outputName);
-
+      setExportProgress(60);
       await ffmpeg.exec(args);
 
       const data = await ffmpeg.readFile(outputName);
@@ -225,8 +293,10 @@ export default function ExportPanel() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      await ffmpeg.deleteFile(inputName);
-      await ffmpeg.deleteFile(outputName);
+      for (const f of files) {
+        try { await ffmpeg.deleteFile(f); } catch {}
+      }
+      try { await ffmpeg.deleteFile(outputName); } catch {}
 
       setExportProgress(100);
       setStatus("done");

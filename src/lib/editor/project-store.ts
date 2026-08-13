@@ -3,13 +3,14 @@ import { persist } from "zustand/middleware";
 import type { StateCreator } from "zustand";
 import type {
   Project, TimelineItem, TrackFlags, Transition, TransitionType,
-  ClipTransform, ClipFilters, ClipCrop, ClipMask, ChromaKey,
+  ClipTransform, ClipFilters, ClipCrop, ClipMask, ChromaKey, AutoCutout,
   ClipSpeed, ClipAnimation, ClipAudio, BlendMode, FilterPreset,
   VideoEffect, TextProps, CanvasSettings, SpeedCurvePoint, ItemKeyframes,
-  Watermark, ExportSettings, BeatMarker,
+  Watermark, ExportSettings, BeatMarker, BrandKit,
 } from "./types";
 import { usePlaybackStore } from "./playback-store";
-import { createDefaultProject, generateId, DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, DEFAULT_WATERMARK, DEFAULT_EXPORT_SETTINGS } from "./types";
+import { createDefaultProject, createDefaultItem, generateId, DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, DEFAULT_WATERMARK, DEFAULT_BRAND_KIT, DEFAULT_EXPORT_SETTINGS } from "./types";
+import { bringTrackToFront, sendTrackToBack, reorderTrackLayers } from "./layers";
 
 function syncCompatibilityFields(item: TimelineItem, fps: number): TimelineItem {
   return {
@@ -20,6 +21,25 @@ function syncCompatibilityFields(item: TimelineItem, fps: number): TimelineItem 
     trimStart: Math.round(((item.srcInFrame || 0) * 1000) / fps),
     trimEnd: Math.round(((item.srcOutFrame || 0) * 1000) / fps),
   };
+}
+
+/**
+ * REGRA 3 — após remoções, garante que o player não continue rodando sem
+ * conteúdo: timeline vazia → pausa + agulha em 0; playhead além do fim →
+ * clampa no último frame válido.
+ */
+function ensurePlaybackStops(newItems: TimelineItem[]) {
+  const now = usePlaybackStore.getState().currentTime;
+  if (newItems.length === 0) {
+    if (usePlaybackStore.getState().isPlaying) usePlaybackStore.getState().pause();
+    if (now !== 0) usePlaybackStore.getState().seekTo(0);
+    return;
+  }
+  const lastEnd = Math.max(...newItems.map((i: TimelineItem) => i.startFrame + i.durationInFrames));
+  if (now > lastEnd) {
+    if (usePlaybackStore.getState().isPlaying) usePlaybackStore.getState().pause();
+    usePlaybackStore.getState().seekTo(Math.max(0, lastEnd - 1));
+  }
 }
 
 function migrateItem(item: TimelineItem): TimelineItem {
@@ -33,6 +53,7 @@ function migrateItem(item: TimelineItem): TimelineItem {
     crop: item.crop || { ...DEFAULT_CROP },
     mask: item.mask || { ...DEFAULT_MASK },
     chromaKey: item.chromaKey || { ...DEFAULT_CHROMA_KEY },
+    autoCutout: item.autoCutout || { enabled: false },
     blendMode: item.blendMode || "normal",
     speed: item.speed || { ...DEFAULT_SPEED },
     animation: item.animation || { ...DEFAULT_ANIMATION },
@@ -47,14 +68,20 @@ interface ProjectState {
   project: Project;
   setProject: (p: Project) => void;
   updateProjectName: (name: string) => void;
+  setCover: (cover: string | null) => void;
 
   addItem: (item: TimelineItem) => void;
   removeItem: (id: string) => void;
+  rippleDelete: (ids: string[]) => void;
+  compactTrackGaps: () => void;
   updateItem: (id: string, patch: Partial<TimelineItem>) => void;
   moveItem: (id: string, patch: { trackId?: string; startFrame?: number }) => void;
   splitItem: (id: string, atFrame: number) => TimelineItem | null;
   duplicateItem: (id: string) => void;
+  duplicateClip: (id: string, mode?: "sequential" | "overlay") => TimelineItem | null;
+  addVoiceover: (opts: { src: string; startFrame: number; durationInFrames: number; name?: string; file?: File }) => TimelineItem | null;
   freezeFrame: (id: string, atFrame: number) => void;
+  extractAudioFromVideo: (id: string) => void;
   reverseItem: (id: string) => void;
   mirrorItem: (id: string, axis: "h" | "v") => void;
   rotateItem: (id: string, degrees: number) => void;
@@ -74,11 +101,13 @@ interface ProjectState {
   toggleEffect: (id: string, effectId: string) => void;
   setMask: (id: string, mask: Partial<ClipMask>) => void;
   setChromaKey: (id: string, key: Partial<ChromaKey>) => void;
+  setAutoCutout: (id: string, cutout: Partial<AutoCutout>) => void;
   setCanvas: (canvas: Partial<CanvasSettings>) => void;
   setKeyframe: (id: string, prop: string, keyframe: import("./types").Keyframe) => void;
   removeKeyframe: (id: string, prop: string, frame: number) => void;
 
   setWatermark: (watermark: Partial<Watermark>) => void;
+  setBrandKit: (brandKit: Partial<BrandKit>) => void;
   setExportSettings: (settings: Partial<ExportSettings>) => void;
   addBeatMarker: (frame: number, label?: string) => void;
   removeBeatMarker: (id: string) => void;
@@ -89,6 +118,9 @@ interface ProjectState {
   removeTrack: (id: string) => void;
   updateTrack: (id: string, patch: Partial<TrackFlags>) => void;
   reorderTracks: (fromIndex: number, toIndex: number) => void;
+  bringTrackToFront: (id: string) => void;
+  sendTrackToBack: (id: string) => void;
+  reorderTrackLayer: (id: string, newIndex: number) => void;
 
   addTransition: (transition: Transition) => void;
   removeTransition: (id: string) => void;
@@ -103,6 +135,8 @@ export const useProjectStore = create<ProjectState>()(
       setProject: (p: Project) => set({ project: p }),
       updateProjectName: (name: string) =>
         set((s: ProjectState) => ({ project: { ...s.project, name, updatedAt: new Date().toISOString() } })),
+      setCover: (cover: string | null) =>
+        set((s: ProjectState) => ({ project: { ...s.project, thumbnail: cover ? cover : undefined, updatedAt: new Date().toISOString() } })),
 
       addItem: (item: TimelineItem) =>
         set((s: ProjectState) => {
@@ -115,13 +149,7 @@ export const useProjectStore = create<ProjectState>()(
       removeItem: (id: string) =>
         set((s: ProjectState) => {
           const newItems = s.project.timeline.items.filter((i: TimelineItem) => i.id !== id);
-          const lastEnd = newItems.length > 0
-            ? Math.max(...newItems.map((i: TimelineItem) => i.startFrame + i.durationInFrames))
-            : s.project.timeline.fps * 10;
-          const now = usePlaybackStore.getState().currentTime;
-          if (now > lastEnd) {
-            usePlaybackStore.getState().seekTo(Math.max(0, lastEnd - 1));
-          }
+          ensurePlaybackStops(newItems);
           return {
             project: {
               ...s.project, updatedAt: new Date().toISOString(),
@@ -130,6 +158,104 @@ export const useProjectStore = create<ProjectState>()(
                 items: newItems,
                 transitions: s.project.timeline.transitions.filter((t: Transition) => t.fromItemId !== id && t.toItemId !== id),
               },
+            },
+          };
+        }),
+
+      // Ripple delete: remove the selected clips and pull the clips that come
+      // after them (same track) to the left, so no blank space is left behind.
+      rippleDelete: (ids: string[]) =>
+        set((s: ProjectState) => {
+          if (ids.length === 0) return {};
+          const removedSet = new Set(ids);
+          const removed = s.project.timeline.items.filter((i: TimelineItem) => ids.includes(i.id));
+          if (removed.length === 0) return {};
+
+          const byTrack = new Map<string, TimelineItem[]>();
+          removed.forEach((i: TimelineItem) => {
+            const group = byTrack.get(i.trackId) || [];
+            group.push(i);
+            byTrack.set(i.trackId, group);
+          });
+
+          const newItems = s.project.timeline.items
+            .filter((i: TimelineItem) => !removedSet.has(i.id))
+            .map((i: TimelineItem) => {
+              const group = byTrack.get(i.trackId);
+              if (!group) return i;
+              let shift = 0;
+              for (const r of group) {
+                if (r.startFrame <= i.startFrame) shift += r.durationInFrames;
+              }
+              return shift > 0 ? { ...i, startFrame: Math.max(0, i.startFrame - shift) } : i;
+            });
+
+          const lastEnd = newItems.length > 0
+            ? Math.max(...newItems.map((i: TimelineItem) => i.startFrame + i.durationInFrames))
+            : s.project.timeline.fps * 10;
+          const now = usePlaybackStore.getState().currentTime;
+          if (now > lastEnd) {
+            usePlaybackStore.getState().seekTo(Math.max(0, lastEnd - 1));
+          }
+          ensurePlaybackStops(newItems);
+
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: {
+                ...s.project.timeline,
+                items: newItems,
+                transitions: s.project.timeline.transitions.filter(
+                  (t: Transition) => !removedSet.has(t.fromItemId) && !removedSet.has(t.toItemId)
+                ),
+              },
+            },
+          };
+        }),
+
+// Compact each track: reassign startFrame sequentially so the clips sit
+      // one right after the other — removes every blank space left by
+      // accidental deletions/moves.
+      compactTrackGaps: () =>
+        set((s: ProjectState) => {
+          const items = s.project.timeline.items;
+          if (items.length === 0) return {};
+
+          const byTrack = new Map<string, TimelineItem[]>();
+          s.project.timeline.trackOrder.forEach((t) => byTrack.set(t, []));
+          items.forEach((i: TimelineItem) => {
+            const group = byTrack.get(i.trackId);
+            if (group) group.push(i);
+          });
+
+          const targetStart = new Map<string, number>();
+          let changed = false;
+          for (const [, group] of byTrack) {
+            group.sort((a: TimelineItem, b: TimelineItem) => a.startFrame - b.startFrame);
+            let cursor = 0;
+            for (const it of group) {
+              if (it.startFrame !== cursor) changed = true;
+              targetStart.set(it.id, cursor);
+              cursor += it.durationInFrames;
+            }
+          }
+          if (!changed) return {};
+
+          const newItems = items.map((i: TimelineItem) => {
+            const t = targetStart.get(i.id);
+            return t === undefined || t === i.startFrame ? i : { ...i, startFrame: t };
+          });
+          const lastEnd = Math.max(...newItems.map((i: TimelineItem) => i.startFrame + i.durationInFrames));
+
+          const now = usePlaybackStore.getState().currentTime;
+          if (now > lastEnd) {
+            usePlaybackStore.getState().seekTo(Math.max(0, lastEnd - 1));
+          }
+
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, items: newItems },
             },
           };
         }),
@@ -189,21 +315,126 @@ export const useProjectStore = create<ProjectState>()(
         return second;
       },
 
-      duplicateItem: (id: string) => {
+      // Duplica um clipe.
+      //  - "sequential": mesmo track, logo após o término do original.
+      //  - "overlay" (Efeito 3D): NOVA camada (index + 1) com o MESMO startFrame.
+      duplicateClip: (id: string, mode: "sequential" | "overlay" = "sequential"): TimelineItem | null => {
         const { project } = get();
         const item = project.timeline.items.find((i: TimelineItem) => i.id === id);
-        if (!item) return;
+        if (!item) return null;
         const fps = project.timeline.fps || 30;
-        const duplicatedItem = syncCompatibilityFields({ ...item, id: generateId(), startFrame: item.startFrame + item.durationInFrames }, fps);
+
+        const makeClone = (partial: Partial<TimelineItem>): TimelineItem => {
+          // Copia TODAS as propriedades (src, transform, filtros, keyframes, etc.)
+          const clone: TimelineItem = {
+            ...item,
+            id: generateId(),
+            name: `${item.name} (2)`,
+            ...partial,
+          };
+          return syncCompatibilityFields(clone, fps);
+        };
+
+        if (mode === "overlay") {
+          const sourceIndex = project.timeline.trackOrder.indexOf(item.trackId);
+          const insertAt = sourceIndex < 0 ? 0 : sourceIndex + 1;
+          const trackKind: TrackFlags["kind"] =
+            item.kind === "audio" ? "audio"
+            : item.kind === "text" ? "text"
+            : item.kind === "sticker" ? "sticker"
+            : "video";
+
+          // Reaproveita a faixa do mesmo tipo imediatamente acima, senão cria uma.
+          let newTrackId: string | null = null;
+          const candidate = project.timeline.trackOrder[insertAt];
+          if (candidate && project.timeline.tracks[candidate]?.kind === trackKind) {
+            newTrackId = candidate;
+          }
+          let tracks = project.timeline.tracks;
+          let trackOrder = [...project.timeline.trackOrder];
+          if (!newTrackId) {
+            newTrackId = generateId();
+            const count = Object.keys(tracks).length;
+            const track: TrackFlags = {
+              id: newTrackId,
+              name: `${trackKind === "video" ? "Vídeo" : trackKind === "audio" ? "Áudio" : trackKind === "text" ? "Texto" : "Stickers"} ${count + 1}`,
+              kind: trackKind,
+              hidden: false,
+              muted: false,
+              locked: false,
+            };
+            tracks = { ...tracks, [newTrackId]: track };
+            trackOrder.splice(insertAt, 0, newTrackId);
+          }
+
+          const clone = makeClone({ trackId: newTrackId, startFrame: item.startFrame, durationInFrames: item.durationInFrames });
+          set((s: ProjectState) => ({
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, tracks, trackOrder, items: [...s.project.timeline.items, clone] },
+            },
+          }));
+          return clone;
+        }
+
+        const clone = makeClone({ startFrame: item.startFrame + item.durationInFrames });
         set((s: ProjectState) => ({
           project: {
             ...s.project, updatedAt: new Date().toISOString(),
-            timeline: {
-              ...s.project.timeline,
-              items: [...s.project.timeline.items, duplicatedItem],
-            },
+            timeline: { ...s.project.timeline, items: [...s.project.timeline.items, clone] },
           },
         }));
+        return clone;
+      },
+
+      duplicateItem: (id: string) => {
+        get().duplicateClip(id, "sequential");
+      },
+
+      // Gravação de narração (voiceover): cria/reaproveita uma faixa de áudio e
+      // insere o clipe a partir do frame onde a gravação começou.
+      addVoiceover: (opts: { src: string; startFrame: number; durationInFrames: number; name?: string; file?: File }): TimelineItem | null => {
+        const { project } = get();
+        const tl = project.timeline;
+        const fps = tl.fps || 30;
+        const startFrame = Math.max(0, Math.round(opts.startFrame));
+        const durationInFrames = Math.max(1, Math.round(opts.durationInFrames));
+
+        let audioTrackId = tl.trackOrder.find((t: string) => tl.tracks[t]?.kind === "audio");
+        let tracks = tl.tracks;
+        let trackOrder = [...tl.trackOrder];
+        if (!audioTrackId) {
+          audioTrackId = generateId();
+          const audioTrack: TrackFlags = {
+            id: audioTrackId, name: "Narração", kind: "audio", hidden: false, muted: false, locked: false,
+          };
+          tracks = { ...tracks, [audioTrackId]: audioTrack };
+          trackOrder = [...trackOrder, audioTrackId];
+        }
+
+        const clip = createDefaultItem({
+          id: generateId(),
+          trackId: audioTrackId,
+          kind: "audio",
+          name: opts.name || "Narração",
+          src: opts.src,
+          file: opts.file,
+          startFrame,
+          durationInFrames,
+          srcInFrame: 0,
+          srcOutFrame: durationInFrames,
+          speed: { ...DEFAULT_SPEED },
+          audio: { ...DEFAULT_AUDIO },
+          color: "#34d399",
+        });
+        const synced = syncCompatibilityFields(clip, fps);
+        set((s: ProjectState) => ({
+          project: {
+            ...s.project, updatedAt: new Date().toISOString(),
+            timeline: { ...s.project.timeline, tracks, trackOrder, items: [...s.project.timeline.items, synced] },
+          },
+        }));
+        return synced;
       },
 
       freezeFrame: (id: string, atFrame: number) => {
@@ -225,6 +456,64 @@ export const useProjectStore = create<ProjectState>()(
           },
         }));
       },
+
+      // Separa o canal de áudio de um clipe de vídeo (CapCut "Extrair Áudio").
+      // O vídeo original é silenciado (sem waveform) e um novo clipe de áudio
+      // independente é criado na faixa logo abaixo, preservando os cortes exatos.
+      extractAudioFromVideo: (id: string) =>
+        set((s: ProjectState) => {
+          const tl = s.project.timeline;
+          const video = tl.items.find((i: TimelineItem) => i.id === id);
+          if (!video || video.kind !== "video" || !video.src) return {};
+
+          const videoTrackIndex = Math.max(0, tl.trackOrder.indexOf(video.trackId));
+          const belowIdx = videoTrackIndex + 1;
+
+          // Reaproveita a faixa de áudio imediatamente abaixo do vídeo se existir.
+          let audioTrackId: string | null = null;
+          const candidate = tl.trackOrder[belowIdx];
+          if (candidate && tl.tracks[candidate]?.kind === "audio") {
+            audioTrackId = candidate;
+          }
+
+          let tracks = tl.tracks;
+          let trackOrder = [...tl.trackOrder];
+          if (!audioTrackId) {
+            audioTrackId = generateId();
+            const audioTrack: TrackFlags = {
+              id: audioTrackId, name: "Áudio", kind: "audio", hidden: false, muted: false, locked: false,
+            };
+            tracks = { ...tracks, [audioTrackId]: audioTrack };
+            trackOrder.splice(belowIdx, 0, audioTrackId);
+          }
+
+          const audioClip = createDefaultItem({
+            id: generateId(),
+            trackId: audioTrackId,
+            kind: "audio",
+            name: `${video.name || "Vídeo"} (áudio)`,
+            src: video.src,
+            mediaId: video.mediaId,
+            // Sincronia exata com o original:
+            startFrame: video.startFrame,
+            durationInFrames: video.durationInFrames,
+            srcInFrame: video.srcInFrame,
+            srcOutFrame: video.srcOutFrame,
+            speed: { ...video.speed },
+            audio: { ...DEFAULT_AUDIO },
+          });
+
+          const items = tl.items.map((i: TimelineItem) =>
+            i.id === id ? { ...i, audio: { ...i.audio, muted: true } } : i
+          );
+
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...tl, tracks, trackOrder, items: [...items, audioClip] },
+            },
+          };
+        }),
 
       reverseItem: (id: string) =>
         set((s: ProjectState) => ({
@@ -404,6 +693,14 @@ export const useProjectStore = create<ProjectState>()(
           },
         })),
 
+      setAutoCutout: (id: string, cutout: Partial<AutoCutout>) =>
+        set((s: ProjectState) => ({
+          project: {
+            ...s.project, updatedAt: new Date().toISOString(),
+            timeline: { ...s.project.timeline, items: s.project.timeline.items.map((i: TimelineItem) => i.id === id ? { ...i, autoCutout: { enabled: false, ...i.autoCutout, ...cutout } } : i) },
+          },
+        })),
+
       setCanvas: (canvas: Partial<CanvasSettings>) =>
         set((s: ProjectState) => {
           const updatedCanvas = { ...s.project.timeline.canvas, ...canvas };
@@ -500,13 +797,15 @@ export const useProjectStore = create<ProjectState>()(
       removeTrack: (id: string) =>
         set((s: ProjectState) => {
           const { [id]: _, ...rest } = s.project.timeline.tracks;
+          const items = s.project.timeline.items.filter((i: TimelineItem) => i.trackId !== id);
+          ensurePlaybackStops(items);
           return {
             project: {
               ...s.project, updatedAt: new Date().toISOString(),
               timeline: {
                 ...s.project.timeline, tracks: rest,
                 trackOrder: s.project.timeline.trackOrder.filter((t: string) => t !== id),
-                items: s.project.timeline.items.filter((i: TimelineItem) => i.trackId !== id),
+                items,
               },
             },
           };
@@ -526,6 +825,27 @@ export const useProjectStore = create<ProjectState>()(
           const [moved] = order.splice(fromIndex, 1);
           order.splice(toIndex, 0, moved);
           return { project: { ...s.project, timeline: { ...s.project.timeline, trackOrder: order } } };
+        }),
+
+      bringTrackToFront: (id: string) =>
+        set((s: ProjectState) => {
+          const order = bringTrackToFront(s.project.timeline.trackOrder, id);
+          if (order === s.project.timeline.trackOrder) return {};
+          return { project: { ...s.project, updatedAt: new Date().toISOString(), timeline: { ...s.project.timeline, trackOrder: order } } };
+        }),
+
+      sendTrackToBack: (id: string) =>
+        set((s: ProjectState) => {
+          const order = sendTrackToBack(s.project.timeline.trackOrder, id);
+          if (order === s.project.timeline.trackOrder) return {};
+          return { project: { ...s.project, updatedAt: new Date().toISOString(), timeline: { ...s.project.timeline, trackOrder: order } } };
+        }),
+
+      reorderTrackLayer: (id: string, newIndex: number) =>
+        set((s: ProjectState) => {
+          const order = reorderTrackLayers(s.project.timeline.trackOrder, id, newIndex);
+          if (order === s.project.timeline.trackOrder) return {};
+          return { project: { ...s.project, updatedAt: new Date().toISOString(), timeline: { ...s.project.timeline, trackOrder: order } } };
         }),
 
       addTransition: (transition: Transition) =>
@@ -549,6 +869,11 @@ export const useProjectStore = create<ProjectState>()(
       setWatermark: (watermark: Partial<Watermark>) =>
         set((s: ProjectState) => ({
           project: { ...s.project, updatedAt: new Date().toISOString(), watermark: { ...s.project.watermark, ...watermark } },
+        })),
+
+      setBrandKit: (brandKit: Partial<BrandKit>) =>
+        set((s: ProjectState) => ({
+          project: { ...s.project, updatedAt: new Date().toISOString(), brandKit: { ...s.project.brandKit, ...brandKit } },
         })),
 
       setExportSettings: (settings: Partial<ExportSettings>) =>
@@ -606,6 +931,7 @@ export const useProjectStore = create<ProjectState>()(
           project: {
             ...project,
             watermark: project.watermark || { ...DEFAULT_WATERMARK },
+            brandKit: project.brandKit || { ...DEFAULT_BRAND_KIT },
             exportSettings: project.exportSettings || { ...DEFAULT_EXPORT_SETTINGS },
             timeline: {
               ...project.timeline,

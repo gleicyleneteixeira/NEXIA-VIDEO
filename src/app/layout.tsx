@@ -16,7 +16,7 @@ export default function RootLayout({
   const isPublicPage = PUBLIC_PATHS.includes(pathname);
 
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body className="h-screen w-screen overflow-hidden bg-[#13131a]">
         {isPublicPage ? (
           // Layout para páginas públicas (login/register)

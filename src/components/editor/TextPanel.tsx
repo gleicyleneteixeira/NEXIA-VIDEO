@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useProjectStore, useUIStore, usePlaybackStore } from "@/lib/editor";
 import type { TimelineItem, TextProps, TextStylePreset, TextGradient } from "@/lib/editor";
 import { DEFAULT_TEXT_PROPS, TEXT_STYLE_PRESETS, DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CANVAS, generateId, createDefaultItem } from "@/lib/editor";
+import { withHistory } from "@/lib/editor/history";
 import { Type, Plus, Trash2 } from "lucide-react";
 
 export default function TextPanel() {
@@ -45,7 +46,7 @@ export default function TextPanel() {
       text: { ...DEFAULT_TEXT_PROPS },
     });
 
-    addItem(item);
+    withHistory("Adicionar texto", () => addItem(item));
     select(item.id);
   };
 

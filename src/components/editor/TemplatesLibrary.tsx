@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { useProjectStore } from "@/lib/editor";
-import type { Template, TemplateCategory, TimelineItem, Transition, TrackFlags } from "@/lib/editor";
+import type { Template, TemplateCategory, TimelineItem, Transition, TrackFlags, AnimationPreset } from "@/lib/editor";
 import { createDefaultItem, generateId, DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO } from "@/lib/editor";
 import { Search, Download, Star, Clock, Layout, Filter, X, Check } from "lucide-react";
 
@@ -450,6 +450,74 @@ const CATEGORIES: TemplateCategory[] = ["reels", "tiktok", "youtube", "stories",
 
 const ALL_CATEGORIES: TemplateCategory[] = [...CATEGORIES, "podcast", "vlog", "gaming", "infantil"];
 
+const TEMPLATE_COLORS: Record<string, { bg: string; title: string; sub: string; accent: string }> = {
+  reels: { bg: "#12073a", title: "#ffffff", sub: "#f472b6", accent: "#8b5cf6" },
+  tiktok: { bg: "#0c0c14", title: "#ffffff", sub: "#22d3ee", accent: "#ec4899" },
+  youtube: { bg: "#1a0b0b", title: "#ffffff", sub: "#f87171", accent: "#ef4444" },
+  stories: { bg: "#082032", title: "#ffffff", sub: "#38bdf8", accent: "#22d3ee" },
+  promo: { bg: "#1c0a2e", title: "#ffffff", sub: "#f59e0b", accent: "#a855f7" },
+  evento: { bg: "#0a1526", title: "#ffffff", sub: "#a5b4fc", accent: "#6366f1" },
+  musica: { bg: "#160a1a", title: "#ffffff", sub: "#e879f9", accent: "#d946ef" },
+  tutorial: { bg: "#0c1410", title: "#ffffff", sub: "#34d399", accent: "#10b981" },
+  podcast: { bg: "#1a1410", title: "#ffffff", sub: "#fb923c", accent: "#f97316" },
+  vlog: { bg: "#0d1624", title: "#ffffff", sub: "#60a5fa", accent: "#3b82f6" },
+  gaming: { bg: "#0e1030", title: "#ffffff", sub: "#a78bfa", accent: "#4f46e5" },
+  infantil: { bg: "#1e0f2b", title: "#ffffff", sub: "#f472b6", accent: "#fb923c" },
+};
+
+const ENTER_BY_CATEGORY: Record<TemplateCategory, AnimationPreset> = {
+  reels: "bounce-in", tiktok: "zoom-in", youtube: "fade-in", stories: "slide-up",
+  promo: "rotate-in", evento: "fade-in", musica: "pop-in", tutorial: "slide-down",
+  podcast: "fade-in", vlog: "slide-right", gaming: "pop-in", infantil: "slide-up",
+};
+
+function buildText(opts: {
+  trackId: string;
+  startFrame: number;
+  durationInFrames: number;
+  content: string;
+  fontSize: number;
+  color: string;
+  y: number;
+  font: string;
+  sub?: boolean;
+  enter: AnimationPreset;
+}): TimelineItem {
+  return createDefaultItem({
+    trackId: opts.trackId,
+    startFrame: opts.startFrame,
+    durationInFrames: opts.durationInFrames,
+    name: opts.sub ? "Subtítulo" : "Título",
+    kind: "text" as const,
+    animation: { enter: opts.enter, exit: "none", durationInFrames: 15 },
+    text: {
+      content: opts.content,
+      fontFamily: opts.font,
+      fontSize: opts.fontSize,
+      fontWeight: opts.sub ? "normal" : "bold",
+      fontStyle: "normal",
+      color: opts.color,
+      backgroundColor: opts.sub ? "#000000" : "transparent",
+      backgroundOpacity: opts.sub ? 0.45 : 0,
+      textAlign: "center",
+      x: 50,
+      y: opts.y,
+      strokeWidth: 0,
+      strokeColor: "#000000",
+      strokeEnabled: false,
+      shadowColor: "rgba(0,0,0,0.6)",
+      shadowBlur: 14,
+      shadowOffsetX: 0,
+      shadowOffsetY: 2,
+      shadowEnabled: true,
+      stylePreset: "none",
+      gradient: { enabled: false, color1: "#ffffff", color2: "#ffffff", angle: 0 },
+      lineHeight: 1.15,
+      letterSpacing: 1,
+    },
+  });
+}
+
 function generateTemplateItems(template: Template): { items: TimelineItem[]; transitions: Transition[]; tracks: Record<string, TrackFlags>; trackOrder: string[] } {
   const fps = 30;
   const vId = generateId();
@@ -462,84 +530,80 @@ function generateTemplateItems(template: Template): { items: TimelineItem[]; tra
     [tId]: { id: tId, name: "Texto", kind: "text", hidden: false, muted: false, locked: false },
   };
   const trackOrder = [vId, aId, tId];
+  const colors = TEMPLATE_COLORS[template.category] || TEMPLATE_COLORS.promo;
+  const enter = ENTER_BY_CATEGORY[template.category] || "fade-in";
 
-  const durationFrames = Math.round(template.duration * fps);
-  const itemCount = 3 + Math.floor(Math.random() * 4);
+  const durationFrames = Math.max(60, Math.round(template.duration * fps));
   const items: TimelineItem[] = [];
   const transitions: Transition[] = [];
 
-  let currentFrame = 0;
+  // 1) Solid brand background over the whole duration
+  items.push(
+    createDefaultItem({
+      trackId: vId,
+      startFrame: 0,
+      durationInFrames: durationFrames,
+      name: template.name,
+      kind: "solid",
+      src: colors.bg,
+      animation: { enter: "fade-in", exit: "none", durationInFrames: 15 },
+    })
+  );
 
-  for (let i = 0; i < itemCount; i++) {
-    const isLast = i === itemCount - 1;
-    const itemDuration = isLast
-      ? durationFrames - currentFrame
-      : Math.round((durationFrames / itemCount) * (0.8 + Math.random() * 0.4));
+  // 2) Título
+  const title = buildText({
+    trackId: tId,
+    startFrame: 0,
+    durationInFrames: durationFrames,
+    content: template.name.toUpperCase(),
+    fontSize: 52,
+    color: colors.title,
+    y: 40,
+    font: "Montserrat, Arial, sans-serif",
+    enter,
+  });
+  items.push(title);
 
-    if (itemDuration <= 0) break;
+  // 3) Subtítulo
+  const subtitle = template.description.split(".")[0] || "Conteúdo do seu vídeo";
+  const subtitleItem = buildText({
+    trackId: tId,
+    startFrame: Math.round(durationFrames * 0.3),
+    durationInFrames: Math.round(durationFrames * 0.7),
+    content: subtitle.slice(0, 60),
+    fontSize: 13,
+    color: colors.sub,
+    y: 70,
+    font: "Inter, Arial, sans-serif",
+    sub: true,
+    enter: "fade-in",
+  });
+  items.push(subtitleItem);
 
-    const isText = i % 3 === 0;
-    const isAudio = i % 5 === 0 && i > 0;
+  // 4) Lower-third / hashtags
+  const tag = template.tags[0] ? `#${template.tags[0].replace(/\s+/g, "")}` : "novovideo";
+  items.push(
+    buildText({
+      trackId: tId,
+      startFrame: 0,
+      durationInFrames: durationFrames,
+      content: tag,
+      fontSize: 10,
+      color: colors.accent,
+      y: 92,
+      font: "Inter, Arial, sans-serif",
+      enter: "fade-in",
+    })
+  );
 
-    const item = createDefaultItem({
-      trackId: isText ? tId : isAudio ? aId : vId,
-      startFrame: currentFrame,
-      durationInFrames: Math.round(itemDuration),
-      name: isText ? `Texto ${i + 1}` : isAudio ? `Áudio ${i + 1}` : `Clipe ${i + 1}`,
-      kind: isText ? "text" : isAudio ? "audio" : "video",
-      animation: {
-        enter: i === 0 ? "fade-in" : "none",
-        exit: isLast ? "fade-out" : "none",
-        durationInFrames: 15,
-      },
-      text: isText
-        ? {
-            content: template.name,
-            fontFamily: "Inter, system-ui, sans-serif",
-            fontSize: 36,
-            fontWeight: "bold",
-            fontStyle: "normal",
-            color: "#ffffff",
-            backgroundColor: "transparent",
-            backgroundOpacity: 0,
-            textAlign: "center",
-            x: 50,
-            y: 50,
-            strokeWidth: 0,
-            strokeColor: "#000000",
-            strokeEnabled: false,
-            shadowColor: "rgba(0,0,0,0.5)",
-            shadowBlur: 10,
-            shadowOffsetX: 2,
-            shadowOffsetY: 2,
-            shadowEnabled: false,
-            stylePreset: "none",
-            gradient: { enabled: false, color1: "#8b5cf6", color2: "#ec4899", angle: 0 },
-            lineHeight: 1.2,
-            letterSpacing: 0,
-          }
-        : undefined,
-    });
-
-    items.push(item);
-
-    if (i > 0 && items.length > 1) {
-      const prevItem = items[items.length - 2];
-      const transTypes: Array<"crossfade" | "fade" | "wipe-left" | "wipe-right" | "slide-left" | "slide-right" | "zoom-in" | "dissolve"> = [
-        "crossfade", "fade", "wipe-left", "wipe-right", "slide-left", "slide-right", "zoom-in", "dissolve",
-      ];
-      transitions.push({
-        id: generateId(),
-        fromItemId: prevItem.id,
-        toItemId: item.id,
-        trackId: item.trackId,
-        type: transTypes[i % transTypes.length],
-        durationInFrames: 15,
-      });
-    }
-
-    currentFrame += Math.round(itemDuration);
-  }
+  transitions.push({
+    id: generateId(),
+    fromItemId: title.id,
+    toItemId: subtitleItem.id,
+    trackId: tId,
+    type: "fade",
+    durationInFrames: 15,
+  });
 
   return { items, transitions, tracks, trackOrder };
 }
