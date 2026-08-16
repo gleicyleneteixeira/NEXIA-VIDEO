@@ -3,10 +3,11 @@ import { useProjectStore, useUIStore, usePlaybackStore } from "@/lib/editor";
 import type { TimelineItem, ClipTransform, ClipFilters, ClipCrop, ClipSpeed, TextProps, Keyframe, KeyframeProp } from "@/lib/editor";
 import { DEFAULT_FILTERS, DEFAULT_CROP, DEFAULT_SPEED } from "@/lib/editor";
 import { RotateCcw, Scissors, Copy, Trash2, FlipHorizontal, FlipVertical, RotateCw, Snowflake, Rewind, Crop } from "lucide-react";
+import { withHistory } from "@/lib/editor/history";
 import SpeedCurve from "./SpeedCurve";
 
 export default function PropertiesPanel() {
-  const { project, updateItem, removeItem, duplicateItem, splitItem, freezeFrame, reverseItem, mirrorItem, rotateItem, setKeyframe, removeKeyframe } = useProjectStore();
+  const { project, updateItem, rippleDelete, duplicateItem, splitItem, freezeFrame, reverseItem, mirrorItem, rotateItem, setKeyframe, removeKeyframe } = useProjectStore();
   const { selectedIds } = useUIStore();
   const { currentTime } = usePlaybackStore();
 
@@ -135,9 +136,9 @@ export default function PropertiesPanel() {
             <Copy size={14} />
           </button>
           <button
-            onClick={() => removeItem(selectedItem.id)}
+            onClick={() => withHistory("Excluir item", () => rippleDelete([selectedItem.id]))}
             className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400"
-            title="Excluir"
+            title="Excluir (fecha a lacuna da faixa)"
           >
             <Trash2 size={14} />
           </button>

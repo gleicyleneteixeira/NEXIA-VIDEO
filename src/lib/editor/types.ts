@@ -102,21 +102,33 @@ export interface ClipMask {
 // ── Chroma Key ─────────────────────────────────────────────
 export interface ChromaKey {
   enabled: boolean;
-  color: string;
-  intensity: number;
-  shadow: number;
-  feather: number;
-  spill: number;
+  targetColor: string; // Hex (ex: '#00FF00')
+  similarity: number;  // Intensidade: 0.0 a 1.0 (0% a 100%)
+  smoothness: number;  // Suavização/Sombra de borda: 0.0 a 1.0
+  spillReduction: number; // Redução de vazamento de cor de borda: 0.0 a 1.0
 }
 
-// ── Remoção de fundo automática (IA) ───────────────────────
-export interface AutoCutout {
+// ── Recorte automático de pessoa (IA / MediaPipe) ──────────
+export interface AutoCutoutConfig {
   enabled: boolean;
+  feather?: number;       // Suavização de borda (0 a 20px)
+  inverted?: boolean;      // Inverter máscara (opcional)
+  modelSelection?: 0 | 1; // 0 = Geral/Rápido (60 FPS), 1 = Detalhado
+  isProcessing?: boolean; // true enquanto o modelo segmenta os frames
+  progress?: number;       // 0 a 100 (ex: 32.8)
 }
 
 export interface BackgroundRemoval {
   chromaKey: ChromaKey;
-  autoCutout: AutoCutout;
+  autoCutout: AutoCutoutConfig;
+}
+
+// ── Recorte manual (pincel / borracha) ─────────────────────
+export interface ManualMask {
+  enabled: boolean;
+  url?: string;      // dataURL PNG da máscara (branco = exibe, preto = esconde)
+  radius: number;    // raio do pincel (px)
+  eraser: boolean;   // false = pinta (mostra), true = borracha (esconde)
 }
 
 // ── Speed ──────────────────────────────────────────────────
@@ -311,6 +323,10 @@ export interface TimelineItem {
   // Custom per-clip accent color (CapCut-style), falls back to the kind palette
   color?: string;
 
+  // Camada do clipe (CapCut-style): quando presente, dita a ordem de desenho.
+  // Ausente → usa a camada natural da trilha (posição em `trackOrder`).
+  zIndex?: number;
+
   transform: ClipTransform;
   filters: ClipFilters;
   hsl: Record<string, HSLAdjustment>;
@@ -318,7 +334,8 @@ export interface TimelineItem {
   crop: ClipCrop;
   mask: ClipMask;
   chromaKey: ChromaKey;
-  autoCutout?: AutoCutout;
+  autoCutout?: AutoCutoutConfig;
+  manualMask?: ManualMask;
   blendMode: BlendMode;
   speed: ClipSpeed;
   animation: ClipAnimation;
@@ -477,7 +494,7 @@ export const DEFAULT_MASK: ClipMask = {
 };
 
 export const DEFAULT_CHROMA_KEY: ChromaKey = {
-  enabled: false, color: "#00ff00", intensity: 0.5, shadow: 0, feather: 0, spill: 0,
+  enabled: false, targetColor: "#00ff00", similarity: 0.45, smoothness: 0.08, spillReduction: 0.5,
 };
 
 export const DEFAULT_SPEED: ClipSpeed = {
@@ -650,7 +667,7 @@ export const createDefaultItem = (partial: Partial<TimelineItem> = {}): Timeline
   id: generateId(), trackId: "", startFrame: 0, durationInFrames: 90, name: "Item",
   kind: "video", transform: { ...DEFAULT_TRANSFORM }, filters: { ...DEFAULT_FILTERS },
   hsl: {}, filterPreset: "none", crop: { ...DEFAULT_CROP }, mask: { ...DEFAULT_MASK },
-  chromaKey: { ...DEFAULT_CHROMA_KEY }, autoCutout: { enabled: false }, blendMode: "normal", speed: { ...DEFAULT_SPEED },
+  chromaKey: { ...DEFAULT_CHROMA_KEY }, autoCutout: { enabled: false }, manualMask: { enabled: false, radius: 32, eraser: false }, blendMode: "normal", speed: { ...DEFAULT_SPEED },
   animation: { ...DEFAULT_ANIMATION }, audio: { ...DEFAULT_AUDIO }, effects: [],
   keyframes: {}, ...partial,
 });

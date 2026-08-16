@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useProjectStore, useUIStore } from "@/lib/editor";
 import type { TimelineItem, ClipFilters, FilterPreset, BlendMode, ClipMask, ChromaKey, VideoEffect, HSLAdjustment } from "@/lib/editor";
 import { DEFAULT_FILTERS, DEFAULT_MASK, DEFAULT_CHROMA_KEY, FILTER_PRESETS, HSL_COLORS, VIDEO_EFFECTS } from "@/lib/editor";
 import { generateId } from "@/lib/editor";
-import { Sparkles, Eye, EyeOff, Plus, Trash2, Palette, Droplet } from "lucide-react";
+import { Sparkles, Eye, EyeOff, Plus, Trash2, Palette, Droplet, Scissors, Brush, Eraser } from "lucide-react";
 
 const BLEND_MODES: { value: BlendMode; label: string }[] = [
   { value: "normal", label: "Normal" },
@@ -25,7 +26,7 @@ const BLEND_MODES: { value: BlendMode; label: string }[] = [
 const MASK_SHAPES = ["circle", "rectangle", "diamond", "film"] as const;
 
 export default function EffectsPanel() {
-  const { project, updateItem, setFilterPreset, setBlendMode, setMask, setChromaKey, setAutoCutout, addEffect, removeEffect, toggleEffect } = useProjectStore();
+  const { project, updateItem, setFilterPreset, setBlendMode, setMask, setChromaKey, setAutoCutout, setManualMask, addEffect, removeEffect, toggleEffect } = useProjectStore();
   const { selectedIds } = useUIStore();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -50,6 +51,23 @@ export default function EffectsPanel() {
       </div>
     );
   }
+
+  // Flag dos modos de remoção de fundo (mutuamente exclusivos).
+  const chromaOn = selectedItem.chromaKey?.enabled ?? false;
+  const autoOn = selectedItem.autoCutout?.enabled ?? false;
+  const manualOn = selectedItem.manualMask?.enabled ?? false;
+  const eraserOn = selectedItem.manualMask?.eraser ?? false;
+  const hasManualMask = !!selectedItem.manualMask?.url;
+
+  const activateCutoutMode = (mode: "auto" | "manual" | "chroma") => {
+    const id = selectedItem.id;
+    if (mode === "auto") setAutoCutout(id, { enabled: true });
+    else if (mode === "manual") setManualMask(id, { enabled: true });
+    else setChromaKey(id, { enabled: true });
+    if (mode !== "auto") setAutoCutout(id, { enabled: false });
+    if (mode !== "manual") setManualMask(id, { enabled: false });
+    if (mode !== "chroma") setChromaKey(id, { enabled: false });
+  };
 
   const updateFilters = (patch: Partial<ClipFilters>) => {
     updateItem(selectedItem.id, { filters: { ...DEFAULT_FILTERS, ...selectedItem.filters, ...patch } });
@@ -213,57 +231,176 @@ export default function EffectsPanel() {
         )}
 
         {/* Remoção de Fundo */}
-        <SectionHeader title="Remover Fundo" collapsed={!!collapsed["bgRemove"]} onToggle={() => toggle("bgRemove")} />
+        <SectionHeader icon={<Scissors size={11} />} title="Remover Fundo" collapsed={!!collapsed["bgRemove"]} onToggle={() => toggle("bgRemove")} />
         {!collapsed["bgRemove"] && (
-          <div className="p-3 border-b border-[#1a1a28] space-y-3">
-            <ToggleRow
-              label="Chroma Key"
-              value={(selectedItem.chromaKey?.enabled ?? false)}
-              onChange={(v) => {
-                setChromaKey(selectedItem.id, { enabled: v, color: selectedItem.chromaKey?.color ?? "#00ff00", intensity: selectedItem.chromaKey?.intensity ?? 0.5, shadow: selectedItem.chromaKey?.shadow ?? 0, feather: selectedItem.chromaKey?.feather ?? 0, spill: selectedItem.chromaKey?.spill ?? 0 });
-                if (v) setAutoCutout(selectedItem.id, { enabled: false });
-              }}
-            />
-            {(selectedItem.chromaKey?.enabled ?? false) && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={(selectedItem.chromaKey?.color ?? "#00ff00")}
-                    onChange={(e) => setChromaKey(selectedItem.id, { color: e.target.value })}
-                    className="w-full h-8 bg-[#13131f] border border-[#1e1e2e] rounded cursor-pointer"
-                  />
-                  <button
-                    onClick={() => window.dispatchEvent(new CustomEvent("chroma-pick-begin", { detail: { id: selectedItem.id } }))}
-                    className="shrink-0 h-8 px-2.5 rounded border border-[#1e1e2e] bg-[#13131f] text-gray-400 hover:text-white hover:border-[#8b5cf6] text-[10px] flex items-center gap-1"
-                    title="Clique no vídeo para escolher a cor"
-                  >
-                    <Droplet size={12} /> Conta-gotas
-                  </button>
+          <div className="p-3 border-b border-[#1a1a28] space-y-2">
+            {/* 1. Recorte Automático (IA) */}
+            <div className={`p-2.5 rounded-lg border transition-colors ${autoOn ? "border-[#8b5cf6]/40 bg-[#8b5cf6]/5" : "border-[#1e1e2e] bg-[#13131f]"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className={`text-[11px] font-medium flex items-center gap-1.5 ${autoOn ? "text-purple-300" : "text-gray-200"}`}>
+                    <Scissors size={11} /> Recorte Automático
+                  </div>
+                  <div className="text-[10px] text-gray-500">Remove o fundo de pessoas via IA</div>
                 </div>
-                <Slider label="Intensidade" value={(selectedItem.chromaKey?.intensity ?? 0.5)} onChange={(v) => setChromaKey(selectedItem.id, { intensity: v })} min={0} max={1} step={0.05} />
-                <Slider label="Sombra" value={(selectedItem.chromaKey?.shadow ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { shadow: v })} min={0} max={1} step={0.05} />
-                <Slider label="Pena" value={(selectedItem.chromaKey?.feather ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { feather: v })} min={0} max={20} step={0.5} />
-                <Slider label="Spill" value={(selectedItem.chromaKey?.spill ?? 0)} onChange={(v) => setChromaKey(selectedItem.id, { spill: v })} min={0} max={1} step={0.05} />
+                <Switch checked={autoOn} onChange={(v) => (v ? activateCutoutMode("auto") : setAutoCutout(selectedItem.id, { enabled: false }))} />
               </div>
-            )}
 
-            <div className="h-px bg-[#1a1a28]" />
+              {autoOn && (
+                <div className="mt-2.5 space-y-2 pt-2.5 border-t border-[#1e1e2e]">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Slider
+                        label="Pena (borda)"
+                        value={selectedItem.autoCutout?.feather ?? 0}
+                        onChange={(v) => setAutoCutout(selectedItem.id, { feather: v })}
+                        min={0}
+                        max={20}
+                        step={1}
+                      />
+                    </div>
+                    <button
+                      onClick={() => setAutoCutout(selectedItem.id, { feather: (selectedItem.autoCutout?.feather ?? 0) === 0 ? 6 : 0 })}
+                      className="shrink-0 h-8 px-2.5 rounded border border-[#1e1e2e] bg-[#13131f] text-gray-400 hover:text-white text-[10px]"
+                      title="Alternar pena padrão"
+                    >
+                      Auto
+                    </button>
+                  </div>
+                  <ToggleRow
+                    label="Inverter máscara"
+                    value={selectedItem.autoCutout?.inverted ?? false}
+                    onChange={(v) => setAutoCutout(selectedItem.id, { inverted: v })}
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-gray-400">Modelo</span>
+                    <div className="flex rounded-md overflow-hidden border border-[#1e1e2e]">
+                      {([0, 1] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setAutoCutout(selectedItem.id, { modelSelection: m })}
+                          className={`px-2.5 py-1 text-[10px] transition-colors ${
+                            (selectedItem.autoCutout?.modelSelection ?? 0) === m
+                              ? "bg-[#8b5cf6]/20 text-purple-300"
+                              : "bg-[#13131f] text-gray-400 hover:text-white"
+                          }`}
+                        >
+                          {m === 0 ? "Rápido" : "Detalhado"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-gray-500">
+                    Segmentação 100% local (MediaPipe, ~10 FPS no preview).{" "}
+                    {selectedItem.autoCutout?.modelSelection === 1
+                      ? "Modelo detalhado — melhor nas bordas, mais pesado."
+                      : "Modelo geral — rápido e otimizado para tempo real."}
+                  </p>
+                </div>
+              )}
+            </div>
 
-            <ToggleRow
-              label="Auto Cutout (IA)"
-              value={(selectedItem.autoCutout?.enabled ?? false)}
-              onChange={(v) => {
-                setAutoCutout(selectedItem.id, { enabled: v });
-                if (v) setChromaKey(selectedItem.id, { enabled: false });
-              }}
-            />
-            {(selectedItem.autoCutout?.enabled ?? false) && (
-              <p className="text-[10px] leading-relaxed text-gray-500">
-                Remove automaticamente a pessoa ao fundo usando MediaPipe (processado no preview, ~10 FPS).
-                Troque para <span className="text-gray-300">Chroma Key</span> se o fundo for verde/azul sólido.
-              </p>
-            )}
+            {/* 2. Recorte Personalizado (Pincel & Borracha) */}
+            <div className={`p-2.5 rounded-lg border transition-colors ${manualOn ? "border-[#22d3ee]/40 bg-[#22d3ee]/5" : "border-[#1e1e2e] bg-[#13131f]"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className={`text-[11px] font-medium flex items-center gap-1.5 ${manualOn ? "text-cyan-300" : "text-gray-200"}`}>
+                    <Brush size={11} /> Recorte Personalizado
+                  </div>
+                  <div className="text-[10px] text-gray-500">Pinte áreas manuais para manter ou apagar</div>
+                </div>
+                <button
+                  onClick={() => (manualOn ? setManualMask(selectedItem.id, { enabled: false }) : activateCutoutMode("manual"))}
+                  className={`shrink-0 px-2.5 py-1 rounded-md text-[10px] flex items-center gap-1 border transition-colors ${
+                    manualOn
+                      ? "bg-[#22d3ee]/20 border-[#22d3ee]/50 text-cyan-300"
+                      : "bg-[#1a1a28] border-[#1e1e2e] text-gray-300 hover:border-[#22d3ee]/50 hover:text-white"
+                  }`}
+                >
+                  <Brush size={11} /> {manualOn ? "Desativar" : "Pincel"}
+                </button>
+              </div>
+
+              {manualOn && (
+                <div className="mt-2.5 space-y-2 pt-2.5 border-t border-[#1e1e2e]">
+                  <Slider
+                    label="Tamanho do pincel"
+                    value={selectedItem.manualMask?.radius ?? 32}
+                    onChange={(v) => setManualMask(selectedItem.id, { radius: v })}
+                    min={4}
+                    max={120}
+                    step={2}
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-gray-400">Ferramenta</span>
+                    <div className="flex rounded-md overflow-hidden border border-[#1e1e2e]">
+                      <button
+                        onClick={() => setManualMask(selectedItem.id, { eraser: false })}
+                        className={`px-2.5 py-1 text-[10px] flex items-center gap-1 transition-colors ${eraserOn ? "bg-[#13131f] text-gray-400 hover:text-white" : "bg-[#22d3ee]/20 text-cyan-300"}`}
+                      >
+                        <Brush size={10} /> Pincel
+                      </button>
+                      <button
+                        onClick={() => setManualMask(selectedItem.id, { eraser: true })}
+                        className={`px-2.5 py-1 text-[10px] flex items-center gap-1 transition-colors ${eraserOn ? "bg-rose-500/20 text-rose-300" : "bg-[#13131f] text-gray-400 hover:text-white"}`}
+                      >
+                        <Eraser size={10} /> Borracha
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-gray-500">
+                    Desenhe direto no clipe:
+                    <span className="text-cyan-300"> pincel</span> mostra,{" "}
+                    <span className="text-rose-300">borracha</span> esconde. O clipe começa inteiro visível.
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-600">{hasManualMask ? "Máscara salva" : "Máscara em branco"}</span>
+                    <button
+                      onClick={() => setManualMask(selectedItem.id, { url: undefined })}
+                      className="px-2 py-1 rounded border border-[#1e1e2e] bg-[#13131f] text-gray-400 hover:text-white text-[10px]"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Chroma Key */}
+            <div className={`p-2.5 rounded-lg border transition-colors ${chromaOn ? "border-[#8b5cf6]/40 bg-[#8b5cf6]/5" : "border-[#1e1e2e] bg-[#13131f]"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className={`text-[11px] font-medium flex items-center gap-1.5 ${chromaOn ? "text-purple-300" : "text-gray-200"}`}>
+                    <Droplet size={11} /> Chroma Key
+                  </div>
+                  <div className="text-[10px] text-gray-500">Remove fundo sólido por cor</div>
+                </div>
+                <Switch checked={chromaOn} onChange={(v) => (v ? activateCutoutMode("chroma") : setChromaKey(selectedItem.id, { enabled: false }))} />
+              </div>
+
+              {chromaOn && (
+                <div className="mt-2.5 space-y-2 pt-2.5 border-t border-[#1e1e2e]">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={selectedItem.chromaKey?.targetColor ?? "#00ff00"}
+                      onChange={(e) => setChromaKey(selectedItem.id, { targetColor: e.target.value })}
+                      className="w-full h-8 bg-[#13131f] border border-[#1e1e2e] rounded cursor-pointer"
+                    />
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent("chroma-pick-begin", { detail: { id: selectedItem.id } }))}
+                      className="shrink-0 h-8 px-2.5 rounded border border-[#1e1e2e] bg-[#13131f] text-gray-400 hover:text-white hover:border-[#8b5cf6] text-[10px] flex items-center gap-1"
+                      title="Clique no vídeo para escolher a cor"
+                    >
+                      <Droplet size={12} /> Conta-gotas
+                    </button>
+                  </div>
+                  <Slider label="Intensidade" value={selectedItem.chromaKey?.similarity ?? 0.45} onChange={(v) => setChromaKey(selectedItem.id, { similarity: v })} min={0} max={1} step={0.01} />
+                  <Slider label="Suavização" value={selectedItem.chromaKey?.smoothness ?? 0.08} onChange={(v) => setChromaKey(selectedItem.id, { smoothness: v })} min={0} max={1} step={0.01} />
+                  <Slider label="Redução de Spill" value={selectedItem.chromaKey?.spillReduction ?? 0.5} onChange={(v) => setChromaKey(selectedItem.id, { spillReduction: v })} min={0} max={1} step={0.01} />
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -309,14 +446,28 @@ export default function EffectsPanel() {
   );
 }
 
-function SectionHeader({ title, collapsed, onToggle }: { title: string; collapsed: boolean; onToggle: () => void }) {
+function SectionHeader({ icon, title, collapsed, onToggle }: { icon?: ReactNode; title: string; collapsed: boolean; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}
       className="w-full flex items-center justify-between px-1 py-2 hover:bg-[#13131f] rounded"
     >
-      <span className="text-[10px] text-gray-500 uppercase tracking-wider">{title}</span>
+      <span className="text-[10px] text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+        {icon && <span className="text-gray-400">{icon}</span>}
+        {title}
+      </span>
       <span className="text-[10px] text-gray-600">{collapsed ? "+" : "−"}</span>
+    </button>
+  );
+}
+
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`w-8 h-4 rounded-full transition-colors shrink-0 ${checked ? "bg-[#8b5cf6]" : "bg-[#1e1e2e]"}`}
+    >
+      <div className={`w-3 h-3 rounded-full bg-white transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
     </button>
   );
 }
@@ -359,12 +510,7 @@ function ToggleRow({ label, value, onChange }: { label: string; value: boolean; 
   return (
     <div className="flex items-center justify-between">
       <label className="text-[10px] text-gray-500">{label}</label>
-      <button
-        onClick={() => onChange(!value)}
-        className={`w-8 h-4 rounded-full transition-colors ${value ? "bg-[#8b5cf6]" : "bg-[#1e1e2e]"}`}
-      >
-        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${value ? "translate-x-4" : "translate-x-0.5"}`} />
-      </button>
+      <Switch checked={value} onChange={onChange} />
     </div>
   );
 }

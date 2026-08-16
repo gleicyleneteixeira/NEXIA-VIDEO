@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useProjectStore, useUIStore } from "@/lib/editor";
 import type { TimelineItem, FadeType, VoiceEffect, EQPreset } from "@/lib/editor";
-import { VOICE_EFFECTS, EQ_PRESETS, DEFAULT_AUDIO, DEFAULT_TRANSFORM, DEFAULT_FILTERS, generateId } from "@/lib/editor";
+import { VOICE_EFFECTS, EQ_PRESETS, DEFAULT_AUDIO, DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CHROMA_KEY, generateId } from "@/lib/editor";
 import { withHistory } from "@/lib/editor/history";
 import { Mic, MicOff, Volume2, Music, Download, Play, Square } from "lucide-react";
 import { persistStandaloneMedia } from "@/lib/editor/media-persistence";
@@ -105,7 +105,7 @@ export default function AudioPanel() {
           filterPreset: "none",
           crop: { enabled: false, top: 0, right: 0, bottom: 0, left: 0 },
           mask: { enabled: false, shape: "circle", x: 50, y: 50, width: 80, height: 80, rotation: 0, feather: 0, invert: false },
-          chromaKey: { enabled: false, color: "#00ff00", intensity: 0.5, shadow: 0, feather: 0, spill: 0 },
+          chromaKey: { ...DEFAULT_CHROMA_KEY },
           blendMode: "normal",
           speed: { rate: 1, reverse: false, freezeFrame: null, curve: [] },
           animation: { enter: "none", exit: "none", durationInFrames: 15 },
@@ -166,7 +166,7 @@ export default function AudioPanel() {
       filterPreset: "none",
       crop: { enabled: false, top: 0, right: 0, bottom: 0, left: 0 },
       mask: { enabled: false, shape: "circle", x: 50, y: 50, width: 80, height: 80, rotation: 0, feather: 0, invert: false },
-      chromaKey: { enabled: false, color: "#00ff00", intensity: 0.5, shadow: 0, feather: 0, spill: 0 },
+      chromaKey: { ...DEFAULT_CHROMA_KEY },
       blendMode: "normal",
       speed: { rate: 1, reverse: false, freezeFrame: null, curve: [] },
       animation: { enter: "none", exit: "none", durationInFrames: 15 },

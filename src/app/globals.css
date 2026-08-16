@@ -45,6 +45,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Bloqueia drag/select nativo dentro dos clipes da timeline para não
+   conflitar com o arraste via Pointer Events. */
+.timeline-clip,
+.timeline-clip * {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+.timeline-clip img {
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

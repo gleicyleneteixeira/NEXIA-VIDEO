@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import { useProjectStore, usePlaybackStore, useUIStore } from "@/lib/editor";
-import type { TimelineItem, ClipFilters, FilterPreset, ClipMask, ChromaKey, Keyframe, ClipTransform, AspectRatio } from "@/lib/editor";
+import type { TimelineItem, ClipFilters, FilterPreset, ClipMask, Keyframe, ClipTransform, AspectRatio } from "@/lib/editor";
 import { FILTER_PRESETS } from "@/lib/editor";
 import { applyKeyframes } from "@/lib/editor/keyframes";
 import { buildActiveVisualLayerList } from "@/lib/editor/layers";
@@ -10,6 +10,9 @@ import { computeSourceFrame } from "@/lib/editor/speedTime";
 import { useAutoCutout } from "@/lib/editor/useAutoCutout";
 import { getValidMediaUrl, getOrCreateBlobUrl, resolveMediaFile } from "@/lib/editor/mediaUrl";
 import type { FadeType } from "@/lib/editor/types";
+import ChromaCanvas from "./ChromaCanvas";
+import MaskBrushOverlay from "./MaskBrushOverlay";
+import TextTransformBox from "./TextTransformBox";
 
 // IDs que já tiveram a fonte regenerada — evita loop eterno de onError
 // caso o próprio blob reconstruído também falhe (mídia realmente corrompida).
@@ -86,49 +89,16 @@ function buildClipPath(crop: TimelineItem["crop"]): string | undefined {
   return `inset(${crop.top}% ${crop.right}% ${crop.bottom}% ${crop.left}%)`;
 }
 
-// ── Chroma Key (real removal via SVG feColorMatrix) ────────
-function buildChromaMatrix(key: ChromaKey): string {
-  const r = parseInt(key.color.slice(1, 3), 16) / 255;
-  const g = parseInt(key.color.slice(3, 5), 16) / 255;
-  const b = parseInt(key.color.slice(5, 7), 16) / 255;
-
-  // Dominant channel carries the key; the others are used as "difference" channels
-  const weights = [-0.5, -0.5, -0.5];
-  if (r >= g && r >= b) weights[0] = 1;
-  else if (g >= r && g >= b) weights[1] = 1;
-  else weights[2] = 1;
-
-  const sensitivity = 1 + Math.max(0, key.intensity) * 5;
-  const keyDot = r * weights[0] + g * weights[1] + b * weights[2];
-  const aR = -weights[0] * sensitivity;
-  const aG = -weights[1] * sensitivity;
-  const aB = -weights[2] * sensitivity;
-  const aOffset = 1 + keyDot * sensitivity;
-
-  return [
-    "1 0 0 0 0",
-    "0 1 0 0 0",
-    "0 0 1 0 0",
-    `${aR.toFixed(4)} ${aG.toFixed(4)} ${aB.toFixed(4)} 0 ${aOffset.toFixed(4)}`,
-  ].join("\n");
+// ── Filtro de mídia (CSS filter do elemento/overlay) ───────
+function buildMediaFilter(item: TimelineItem, cssFilter: string): string {
+  const urls: string[] = [];
+  if (item.filters && (item.filters.exposure !== 0 || item.filters.temperature !== 0 || item.filters.highlights !== 0 || item.filters.shadows !== 0)) {
+    urls.push(`url(#coloradjust-${item.id})`);
+  }
+  if (cssFilter !== "none") urls.push(cssFilter);
+  return urls.length > 0 ? urls.join(" ") : "none";
 }
 
-function ChromaFilterDefs({ chroma, itemId }: { chroma: ChromaKey; itemId: string }) {
-  const values = buildChromaMatrix(chroma);
-  const stdDeviation = (chroma.feather || 0) * 0.06;
-  return (
-    <svg width="0" height="0" style={{ position: "absolute" }}>
-      <defs>
-        <filter id={`chroma-${itemId}`} x="0" y="0" width="100%" height="100%">
-          <feColorMatrix type="matrix" values={values} />
-          {stdDeviation > 0 && <feGaussianBlur stdDeviation={stdDeviation} />}
-        </filter>
-      </defs>
-    </svg>
-  );
-}
-
-// ── Color adjust (exposure / temperature / highlights / shadows) ──
 function ColorAdjustDefs({ filters, itemId }: { filters: ClipFilters; itemId: string }) {
   const exp = filters?.exposure ?? 0;
   const temp = filters?.temperature ?? 0;
@@ -163,18 +133,6 @@ function ColorAdjustDefs({ filters, itemId }: { filters: ClipFilters; itemId: st
       </defs>
     </svg>
   );
-}
-
-function buildMediaFilter(item: TimelineItem, cssFilter: string): string {
-  const urls: string[] = [];
-  if (item.filters && (item.filters.exposure !== 0 || item.filters.temperature !== 0 || item.filters.highlights !== 0 || item.filters.shadows !== 0)) {
-    urls.push(`url(#coloradjust-${item.id})`);
-  }
-  if (item.chromaKey?.enabled) {
-    urls.push(`url(#chroma-${item.id})`);
-  }
-  if (cssFilter !== "none") urls.push(cssFilter);
-  return urls.length > 0 ? urls.join(" ") : "none";
 }
 
 function getMaskSVG(mask: ClipMask | undefined, itemId: string): React.ReactNode {
@@ -556,12 +514,13 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
   onSelect?: () => void;
 }) {
   const internalRef = useRef<HTMLVideoElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const ref = externalRef || internalRef;
   const prevSourceRef = useRef<{ id: string; src?: string } | null>(null);
   const { isPlaying, currentTime, volume, isMuted } = usePlaybackStore();
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
-  const { updateItem, project } = useProjectStore();
+  const { updateItem, setManualMask, setAutoCutout, project } = useProjectStore();
   const track = project.timeline.tracks[item.trackId];
   const isTrackMuted = track?.muted;
   const timeline = project.timeline;
@@ -796,6 +755,7 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
 
   const filterStr = buildFilterString(interpolatedFilters, item.filterPreset);
   const mediaFilter = buildMediaFilter(item, filterStr);
+  const chromaXray = !!item.chromaKey?.enabled && (item.kind === "video" || item.kind === "freeze" || item.kind === "image");
   const opacity = interpolatedTransform.opacity ?? 1;
   const scaleX = interpolatedTransform.scaleX ?? 1;
   const scaleY = interpolatedTransform.scaleY ?? 1;
@@ -804,10 +764,20 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
   const y = interpolatedTransform.y ?? 0;
 
   // ── Remoção de fundo automática (IA / MediaPipe) ──
-  const cutoutEnabled = !!item.autoCutout?.enabled && (item.kind === "video" || item.kind === "freeze");
+  const cutoutEnabled = !!item.autoCutout?.enabled && (item.kind === "video" || item.kind === "freeze" || item.kind === "image");
+  const handleCutoutProgress = useCallback(
+    (s: { isProcessing: boolean; progress: number }) => setAutoCutout(item.id, s),
+    [setAutoCutout, item.id]
+  );
   const { maskSrc: cutoutMask } = useAutoCutout(
-    cutoutEnabled ? (ref as React.RefObject<HTMLVideoElement>) : null,
     cutoutEnabled
+      ? ((item.kind === "image" ? imageRef : (ref as React.RefObject<HTMLVideoElement>)) as React.RefObject<HTMLVideoElement | HTMLImageElement | null>)
+      : null,
+    cutoutEnabled ? item.autoCutout ?? { enabled: true } : null,
+    item.id,
+    cutoutEnabled ? item.durationInFrames : undefined,
+    fps,
+    handleCutoutProgress
   );
 
   const bounds = getMediaBounds(item, timeline.canvas?.width || timeline.width || 1920, timeline.canvas?.height || timeline.height || 1080);
@@ -822,6 +792,10 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
   const finalX = (x || 0) + animComp.tx;
   const finalY = (y || 0) + animComp.ty;
   const transformStr = `translate(calc(-50% + ${finalX}px), calc(-50% + ${finalY}px)) rotate(${finalRot}deg) scale(${finalScaleX}, ${finalScaleY})`;
+
+  // ── Recorte manual (pincel) tem precedência sobre o auto cutout na máscara.
+  const manualMaskOn = !!item.manualMask?.enabled;
+  const maskUrl = manualMaskOn && item.manualMask?.url ? item.manualMask?.url : cutoutEnabled ? cutoutMask : undefined;
 
   const wrapperStyle: React.CSSProperties = {
     position: "absolute",
@@ -838,20 +812,19 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
     filter: animComp.blur > 0 ? `blur(${animComp.blur}px)` : undefined,
     clipPath: item.mask?.enabled ? `url(#mask-clip-${item.id})` : undefined,
     WebkitClipPath: item.mask?.enabled ? `url(#mask-clip-${item.id})` : undefined,
-    maskImage: cutoutEnabled && cutoutMask ? `url(${cutoutMask})` : undefined,
-    WebkitMaskImage: cutoutEnabled && cutoutMask ? `url(${cutoutMask})` : undefined,
-    maskSize: cutoutEnabled && cutoutMask ? "contain" : undefined,
-    WebkitMaskSize: cutoutEnabled && cutoutMask ? "contain" : undefined,
-    maskRepeat: cutoutEnabled && cutoutMask ? "no-repeat" : undefined,
-    WebkitMaskRepeat: cutoutEnabled && cutoutMask ? "no-repeat" : undefined,
-    maskPosition: cutoutEnabled && cutoutMask ? "center" : undefined,
-    WebkitMaskPosition: cutoutEnabled && cutoutMask ? "center" : undefined,
+    maskImage: maskUrl ? `url(${maskUrl})` : undefined,
+    WebkitMaskImage: maskUrl ? `url(${maskUrl})` : undefined,
+    maskSize: manualMaskOn ? "100% 100%" : "contain",
+    WebkitMaskSize: maskUrl ? (manualMaskOn ? "100% 100%" : "contain") : undefined,
+    maskRepeat: maskUrl ? "no-repeat" : undefined,
+    WebkitMaskRepeat: maskUrl ? "no-repeat" : undefined,
+    maskPosition: maskUrl ? "center" : undefined,
+    WebkitMaskPosition: maskUrl ? "center" : undefined,
     mixBlendMode: (item.blendMode as React.CSSProperties["mixBlendMode"]) || undefined,
   };
 
   return (
     <div style={wrapperStyle} onClick={(e) => { e.stopPropagation(); onSelect?.(); }}>
-      {item.chromaKey?.enabled && <ChromaFilterDefs chroma={item.chromaKey} itemId={item.id} />}
       <ColorAdjustDefs itemId={item.id} filters={interpolatedFilters} />
       {(item.kind === "video" || item.kind === "freeze") && (
         <video
@@ -862,22 +835,59 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
           className="w-full h-full pointer-events-none"
           playsInline
           preload="auto"
-          style={{ filter: mediaFilter }}
+          style={{ filter: mediaFilter, opacity: chromaXray ? 0 : 1 }}
           onLoadedMetadata={handleVideoLoaded}
           onCanPlay={handleMediaReady}
           onError={handleSourceError}
         />
       )}
 
+      {chromaXray && (
+        <ChromaCanvas
+          id={item.id}
+          mediaRef={ref as React.RefObject<HTMLVideoElement | null>}
+          chroma={item.chromaKey}
+          width={parseFloat(bounds.width)}
+          height={parseFloat(bounds.height)}
+          filter={mediaFilter}
+        />
+      )}
+
       {item.kind === "image" && item.src && (
         <img
+          ref={imageRef}
           src={item.src}
           alt=""
           data-item-id={item.id}
           className="w-full h-full pointer-events-none"
-          style={{ filter: mediaFilter }}
+          style={{ filter: mediaFilter, opacity: chromaXray ? 0 : 1 }}
           onLoad={handleImageLoaded}
           onError={handleSourceError}
+        />
+      )}
+
+      {chromaXray && item.kind === "image" && (
+        <ChromaCanvas
+          id={`${item.id}-img`}
+          mediaRef={imageRef}
+          chroma={item.chromaKey}
+          width={parseFloat(bounds.width)}
+          height={parseFloat(bounds.height)}
+          filter={mediaFilter}
+        />
+      )}
+
+      {manualMaskOn && (item.kind === "video" || item.kind === "freeze" || item.kind === "image") && (
+        <MaskBrushOverlay
+          id={item.id}
+          mask={item.manualMask}
+          width={parseFloat(bounds.width)}
+          height={parseFloat(bounds.height)}
+          onCommit={(url) => {
+            // O commit do pincel é frequente; usa update direto (sem history
+            // a cada pincelada) p/ não poluir o undo/redo.
+            setManualMask(item.id, { url });
+          }}
         />
       )}
 
@@ -953,7 +963,7 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
       {item.chromaKey?.enabled && (
         <div className="absolute inset-0 pointer-events-none flex items-start justify-end" style={{ zIndex: 15 }}>
           <div className="m-2 px-2 py-1 rounded bg-black/70 text-[10px] text-white/80 backdrop-blur-sm flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full border border-white/30" style={{ backgroundColor: item.chromaKey.color }} />
+            <div className="w-2.5 h-2.5 rounded-full border border-white/30" style={{ backgroundColor: item.chromaKey.targetColor }} />
             Chroma Key
           </div>
         </div>
@@ -1245,6 +1255,8 @@ export default function Preview() {
     ["video", "image", "text", "sticker", "freeze", "solid"].includes(selectedItem.kind) &&
     currentTime >= selectedItem.startFrame &&
     currentTime < selectedItem.startFrame + selectedItem.durationInFrames;
+
+  const selectedTextItem = selectedItem?.kind === "text" && selectedItem.text ? selectedItem.text : null;
 
   const changeCanvasAspectRatio = useCallback((ratio: AspectRatio) => {
     let width = 1920;
@@ -1795,7 +1807,7 @@ export default function Preview() {
       ctx.drawImage(el, 0, 0, w, h);
       const d = ctx.getImageData(px, py, 1, 1).data;
       const hex = `#${[d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-      setChromaKey(chromaPickId, { color: hex });
+      setChromaKey(chromaPickId, { targetColor: hex });
     } catch {
       /* canvas contaminado (cross-origin): ignora */
     } finally {
@@ -1899,7 +1911,7 @@ export default function Preview() {
           <div className="absolute left-0 right-0 h-0.5 bg-red-500 border-t border-dashed border-red-500 z-30 pointer-events-none" style={{ top: "50%" }} />
         )}
 
-        {selectedItem && interpolatedTransform && isSelectedVisualActive && (() => {
+        {selectedItem && interpolatedTransform && isSelectedVisualActive && selectedItem.kind !== "text" && (() => {
           const bounds = getMediaBounds(selectedItem, timeline.canvas?.width || timeline.width || 1920, timeline.canvas?.height || timeline.height || 1080);
           const transformStr = `translate(calc(-50% + ${interpolatedTransform.x}px), calc(-50% + ${interpolatedTransform.y}px)) rotate(${interpolatedTransform.rotation}deg) scale(${interpolatedTransform.scaleX}, ${interpolatedTransform.scaleY})`;
           return (
@@ -1947,6 +1959,21 @@ export default function Preview() {
             </div>
           );
         })()}
+
+        {selectedTextItem && isSelectedVisualActive && (
+          <TextTransformBox
+            item={selectedItem!}
+            stageWidth={timeline.canvas?.width || timeline.width || 1920}
+            stageHeight={timeline.canvas?.height || timeline.height || 1080}
+            scale={scale}
+            onMove={(x, y) => {
+              updateItem(selectedItem!.id, { text: { ...selectedTextItem, x, y } });
+            }}
+            onResize={(nextFontSize) => {
+              updateItem(selectedItem!.id, { text: { ...selectedTextItem, fontSize: nextFontSize } });
+            }}
+          />
+        )}
       </div>
 
       {/* CapCut-style bottom control bar */}

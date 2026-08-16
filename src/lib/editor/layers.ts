@@ -59,10 +59,89 @@ export function reorderTrackLayers(trackOrder: string[], trackId: string, newInd
 }
 
 /**
+ * zIndex EFETIVO de um clipe: usa o campo explícito `zIndex` quando presente;
+ * caso contrário, a camada natural da sua trilha (posição em `trackOrder`).
+ * Projetos antigos (sem zIndex) continuam com a mesma ordem de render; clipes
+ * reposicionados manualmente têm o zIndex gravado no próprio item.
+ */
+export function getClipEffectiveZIndex(trackOrder: string[], item: TimelineItem): number {
+  return item.zIndex ?? getTrackLayerIndex(trackOrder, item.trackId);
+}
+
+/**
+ * Traz o clipe para a FRENTE da cena: zIndex = maior zIndex efetivo + 1.
+ * Retorna o MESMO array quando não há mudança.
+ */
+export function bringClipToFront(items: TimelineItem[], trackOrder: string[], clipId: string): TimelineItem[] {
+  const target = items.find((c: TimelineItem) => c.id === clipId);
+  if (!target) return items;
+  const maxZ = Math.max(...items.map((c: TimelineItem) => getClipEffectiveZIndex(trackOrder, c)), 0);
+  if (getClipEffectiveZIndex(trackOrder, target) >= maxZ) return items;
+  return items.map((c: TimelineItem) => (c.id === clipId ? { ...c, zIndex: maxZ + 1 } : c));
+}
+
+/**
+ * Manda o clipe para o FUNDO (zIndex = 0), empurrando para cima os clipes que
+ * estavam na frente (ou no mesmo nível) dele, preservando a ordem relativa.
+ */
+export function sendClipToBack(items: TimelineItem[], trackOrder: string[], clipId: string): TimelineItem[] {
+  const target = items.find((c: TimelineItem) => c.id === clipId);
+  if (!target) return items;
+  const from = getClipEffectiveZIndex(trackOrder, target);
+  if (from <= 0) return items;
+  return items.map((c: TimelineItem) => {
+    if (c.id === clipId) return { ...c, zIndex: 0 };
+    const z = getClipEffectiveZIndex(trackOrder, c);
+    if (z <= from) return { ...c, zIndex: z + 1 };
+    return c;
+  });
+}
+
+/** Troca o zIndex do clipe com o vizinho imediatamente superior (Avançar camada). */
+export function moveClipLayerUp(items: TimelineItem[], trackOrder: string[], clipId: string): TimelineItem[] {
+  const target = items.find((c: TimelineItem) => c.id === clipId);
+  if (!target) return items;
+  const from = getClipEffectiveZIndex(trackOrder, target);
+  const above = items
+    .filter((c: TimelineItem) => getClipEffectiveZIndex(trackOrder, c) > from)
+    .sort((a: TimelineItem, b: TimelineItem) => getClipEffectiveZIndex(trackOrder, a) - getClipEffectiveZIndex(trackOrder, b));
+  if (above.length === 0) return items;
+  const next = above[0];
+  const nextZ = getClipEffectiveZIndex(trackOrder, next);
+  return items.map((c: TimelineItem) => {
+    if (c.id === clipId) return { ...c, zIndex: nextZ };
+    if (c.id === next.id) return { ...c, zIndex: from };
+    return c;
+  });
+}
+
+/** Troca o zIndex do clipe com o vizinho imediatamente inferior (Recuar camada). */
+export function moveClipLayerDown(items: TimelineItem[], trackOrder: string[], clipId: string): TimelineItem[] {
+  const target = items.find((c: TimelineItem) => c.id === clipId);
+  if (!target) return items;
+  const from = getClipEffectiveZIndex(trackOrder, target);
+  if (from <= 0) return items;
+  const below = items
+    .filter((c: TimelineItem) => getClipEffectiveZIndex(trackOrder, c) < from)
+    .sort((a: TimelineItem, b: TimelineItem) => getClipEffectiveZIndex(trackOrder, b) - getClipEffectiveZIndex(trackOrder, a));
+  if (below.length === 0) return items;
+  const next = below[0];
+  const nextZ = getClipEffectiveZIndex(trackOrder, next);
+  return items.map((c: TimelineItem) => {
+    if (c.id === clipId) return { ...c, zIndex: nextZ };
+    if (c.id === next.id) return { ...c, zIndex: from };
+    return c;
+  });
+}
+
+/**
  * Lista de camadas ativas no tempo atual, ordenada do menor layerIndex (FUNDO)
  * para o maior (FRENTE). Deve ser iterada de forma que o último da lista seja
  * desenhado por último (topo da cena). Empates são desfeitos pela ordem de
  * início do item (estável dentro da mesma faixa).
+ *
+ * Critério: zIndex efetivo do clipe (explícito ou camada natural da trilha);
+ * sem zIndex explícito o resultado é idêntico à ordem por trilha.
  *
  * Filtra por visibilidade da faixa e janela ativa: start <= currentTime < end.
  */
@@ -77,7 +156,7 @@ export function buildActiveLayerList(
       return currentTime >= item.startFrame && currentTime < item.startFrame + item.durationInFrames;
     })
     .sort((a: TimelineItem, b: TimelineItem) => {
-      const diff = getItemLayerIndex(timeline, a) - getItemLayerIndex(timeline, b);
+      const diff = getClipEffectiveZIndex(timeline.trackOrder, a) - getClipEffectiveZIndex(timeline.trackOrder, b);
       return diff !== 0 ? diff : a.startFrame - b.startFrame;
     });
 }

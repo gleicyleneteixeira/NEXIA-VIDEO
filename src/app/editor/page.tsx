@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { PanelLeftClose, PanelLeftOpen, Undo2, Redo2, Save } from "lucide-react";
 import { useUIStore, useProjectStore, useMediaStore, usePlaybackStore } from "@/lib/editor";
 import type { TimelineItem } from "@/lib/editor";
@@ -58,6 +58,27 @@ export default function EditorPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("media");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [timelineHeight, setTimelineHeight] = useState(220);
+
+  const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  const handleTimelineResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    timelineResizeRef.current = { startY: e.clientY, startHeight: timelineHeight };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+  }, [timelineHeight]);
+
+  const handleTimelineResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = timelineResizeRef.current;
+    if (!d) return;
+    const minH = 220;
+    const maxH = Math.floor(window.innerHeight * 0.6);
+    const next = d.startHeight + (d.startY - e.clientY);
+    setTimelineHeight(Math.max(minH, Math.min(next, maxH)));
+  }, []);
+
+  const handleTimelineResizeEnd = useCallback(() => {
+    timelineResizeRef.current = null;
+  }, []);
 
   const timeline = project.timeline;
 
@@ -101,7 +122,7 @@ export default function EditorPage() {
           filters: { ...DEFAULT_FILTERS },
           crop: { enabled: false, top: 0, right: 0, bottom: 0, left: 0 },
           mask: { enabled: false, shape: "circle", x: 50, y: 50, width: 80, height: 80, rotation: 0, feather: 0, invert: false },
-          chromaKey: { enabled: false, color: "#00ff00", intensity: 0.5, shadow: 0, feather: 0, spill: 0 },
+          chromaKey: { ...DEFAULT_CHROMA_KEY },
           blendMode: "normal",
           speed: { rate: 1, reverse: false, freezeFrame: null, curve: [] },
           animation: { enter: "none", exit: "none", durationInFrames: 15 },
@@ -251,30 +272,48 @@ export default function EditorPage() {
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && (
           <div className="flex flex-shrink-0">
-            <div className="w-10 bg-[#0a0a12] border-r border-[#1e1e2e] flex flex-col items-center py-2 gap-1 overflow-y-auto">
-              {sidebarItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setSidebarTab(item.id);
-                    if (!sidebarOpen) setSidebarOpen(true);
-                  }}
-                   className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-medium transition-colors ${
-                     sidebarTab === item.id && sidebarOpen
-                       ? "bg-[#8b5cf6]/20 text-[#8b5cf6]"
-                       : "text-gray-500 hover:bg-[#1e1e2e] hover:text-gray-300"
-                   }`}
-                   title={item.label}
-                 >
-                   {item.icon}
-                </button>
-              ))}
+            <div className="w-[72px] bg-[#0a0a12] border-r border-[#1e1e2e] flex flex-col items-center py-2 gap-0.5 overflow-y-auto">
+              {sidebarItems.map((item) => {
+                const active = sidebarTab === item.id && sidebarOpen;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setSidebarTab(item.id);
+                    }}
+                    className={`w-full flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-lg transition-colors ${
+                      active
+                        ? "bg-[#8b5cf6]/15 text-[#8b5cf6] shadow-[inset_0_0_0_1px_rgba(139,92,246,0.35)]"
+                        : "text-gray-500 hover:bg-[#1e1e2e] hover:text-gray-300"
+                    }`}
+                    title={item.label}
+                  >
+                    <span className="text-base leading-none">{item.icon}</span>
+                    <span className={`text-[10px] leading-tight ${active ? "text-[#a78bfa]" : ""}`}>
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="w-[280px] bg-[#0d0d16] border-r border-[#1e1e2e] overflow-hidden">
+            <div className="w-[300px] bg-[#0d0d16] border-r border-[#1e1e2e] flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 flex items-center justify-between px-2 h-7 bg-[#0a0a12] border-b border-[#1e1e2e]">
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                  {sidebarItems.find((i) => i.id === sidebarTab)?.label}
+                </span>
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="p-1 rounded hover:bg-[#1e1e2e] text-gray-500 hover:text-gray-300 flex items-center gap-1"
+                  title="Recolher painel"
+                >
+                  <PanelLeftClose size={12} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0">
               {sidebarTab === "media" && <MediaPanel />}
               {sidebarTab === "audio" && <AudioPanel />}
-              {sidebarTab === "text" && <TextPanel />}
+              {sidebarTab === "text" && <TextPanel onNavigate={(tab) => setSidebarTab(tab as SidebarTab)} />}
               {sidebarTab === "stickers" && <StickersPanel />}
               {sidebarTab === "effects" && <EffectsPanel />}
               {sidebarTab === "transitions" && <TransitionsPanel />}
@@ -295,6 +334,7 @@ export default function EditorPage() {
                   <ExportPanel />
                 </div>
               )}
+              </div>
             </div>
           </div>
         )}
@@ -304,7 +344,21 @@ export default function EditorPage() {
             <Preview />
           </div>
 
-          <div className="h-[220px] flex-shrink-0 border-t border-[#1e1e2e]">
+          {/* Alça horizontal: puxar para cima aumenta a timeline (min 220px → max 60vh). */}
+          <div
+            className="h-1.5 flex-shrink-0 bg-transparent hover:bg-[#2a2a3a] active:bg-[#3a3a4a] cursor-row-resize touch-none transition-colors"
+            title="Redimensionar a timeline"
+            onPointerDown={handleTimelineResizeStart}
+            onPointerMove={handleTimelineResizeMove}
+            onPointerUp={handleTimelineResizeEnd}
+            onPointerCancel={handleTimelineResizeEnd}
+            onPointerLeave={handleTimelineResizeEnd}
+          />
+
+          <div
+            className="flex-shrink-0 border-t border-[#1e1e2e]"
+            style={{ height: timelineHeight }}
+          >
             <Timeline />
           </div>
         </div>

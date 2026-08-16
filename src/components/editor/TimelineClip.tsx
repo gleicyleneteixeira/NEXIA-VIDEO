@@ -84,7 +84,7 @@ export default function TimelineClip({
   item,
   pxPerFrame,
   selected,
-  onMouseDown,
+  onPointerDown,
   onContextMenu,
   onTrimLeft,
   onTrimRight,
@@ -93,10 +93,10 @@ export default function TimelineClip({
   item: TimelineItem;
   pxPerFrame: number;
   selected: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
+  onPointerDown: (e: React.PointerEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
-  onTrimLeft?: (e: React.MouseEvent) => void;
-  onTrimRight?: (e: React.MouseEvent) => void;
+  onTrimLeft?: (e: React.PointerEvent) => void;
+  onTrimRight?: (e: React.PointerEvent) => void;
   onDragStart?: (e: React.DragEvent) => void;
 }) {
   const left = item.startFrame * pxPerFrame;
@@ -124,7 +124,7 @@ export default function TimelineClip({
 
   return (
     <div
-      className={`absolute top-1 bottom-1 rounded-md cursor-grab active:cursor-grabbing border flex items-center overflow-visible transition-opacity hover:brightness-110 select-none ${
+      className={`timeline-clip absolute top-1 bottom-1 rounded-md cursor-grab active:cursor-grabbing border flex items-center overflow-visible transition-opacity hover:brightness-110 select-none touch-none ${
         selected ? "border-white/50" : "border-white/[0.07]"
       }`}
       style={{
@@ -133,21 +133,38 @@ export default function TimelineClip({
         backgroundColor: palette.solid,
         boxShadow: selected ? `0 0 0 1px ${palette.selected}55, 0 2px 8px rgba(0,0,0,0.4)` : "0 1px 3px rgba(0,0,0,0.35)",
       }}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
       draggable
       onDragStart={onDragStart}
     >
       {onTrimLeft && (
         <div
-          className="absolute left-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-l-md bg-white/10"
-          onMouseDown={(e) => { e.stopPropagation(); onTrimLeft(e); }}
+          data-trim-handle
+          className="absolute left-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-l-md bg-white/10 touch-none select-none"
+          onPointerDown={(e) => { e.stopPropagation(); onTrimLeft(e); }}
         />
+      )}
+
+      {/* Overlay de progresso do Recorte Automático (IA / CapCut-style) */}
+      {item.autoCutout?.isProcessing && (
+        <div className="absolute inset-0 z-20 bg-black/40 backdrop-blur-[1px] flex flex-col justify-between p-1 pointer-events-none rounded-md">
+          <div className="bg-[#0f3d3e]/90 border border-teal-500/40 rounded px-1.5 py-0.5 text-[10px] text-teal-200 font-medium tracking-wide flex items-center gap-1 w-fit shadow">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
+            <span>Aplicando Recorte automático... {item.autoCutout.progress ?? 0}%</span>
+          </div>
+          <div className="w-full bg-zinc-800/80 h-1 rounded-full overflow-hidden">
+            <div
+              className="bg-teal-400 h-full transition-all duration-150"
+              style={{ width: `${item.autoCutout.progress ?? 0}%` }}
+            />
+          </div>
+        </div>
       )}
 
       {/* ── Conteúdo por tipo de mídia ─────────────────────────────── */}
       {kind === "video" && showFilmstrip && thumbnails.length > 0 ? (
-        <div className="absolute inset-0 flex overflow-hidden rounded-md">
+        <div className="absolute inset-0 flex overflow-hidden rounded-md pointer-events-none">
           {thumbnails.map((thumb, idx) => (
             <div
               key={idx}
@@ -162,9 +179,13 @@ export default function TimelineClip({
           ))}
         </div>
       ) : kind === "video" && item.thumb ? (
-        <div className="absolute inset-0 opacity-40 overflow-hidden rounded-md">
-          <img src={item.thumb} alt="" className="w-full h-full object-cover" />
-        </div>
+        <img
+          src={item.thumb}
+          alt=""
+          draggable={false}
+          className="timeline-clip-img absolute inset-0 opacity-40 overflow-hidden rounded-md pointer-events-none select-none"
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
       ) : kind === "audio" ? (
         <div className="absolute inset-0 rounded-md overflow-hidden" style={{ backgroundColor: accent }}>
           <WaveformBars item={item} width={width} mode="fill" />
@@ -188,7 +209,7 @@ export default function TimelineClip({
 
       {/* Waveform sobreposto na base dos clipes de vídeo (CapCut-style) */}
       {kind === "video" && showWaveformOverlay && width > 24 && (
-        <div className="absolute inset-x-0 bottom-0 h-[32%] overflow-hidden opacity-90 rounded-b-md">
+        <div className="absolute inset-x-0 bottom-0 h-[32%] overflow-hidden opacity-90 rounded-b-md pointer-events-none">
           <WaveformBars item={item} width={width} mode="overlay" />
         </div>
       )}
@@ -210,8 +231,8 @@ export default function TimelineClip({
         </div>
       )}
 
-      {/* Cabeçalho: glyph + nome + badges */}
-      <div className="relative z-10 px-2 flex items-center gap-1 min-w-0">
+      {/* Cabeçalho: glyph + nome + badges (puramente visual — não intercepta o clique) */}
+      <div className="relative z-10 px-2 flex items-center gap-1 min-w-0 pointer-events-none">
         {width > 34 && <KindGlyph kind={kind} />}
         <span className="text-[10px] text-white/90 truncate font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
           {item.name}
@@ -240,8 +261,9 @@ export default function TimelineClip({
 
       {onTrimRight && (
         <div
-          className="absolute right-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-r-md bg-white/10"
-          onMouseDown={(e) => { e.stopPropagation(); onTrimRight(e); }}
+          data-trim-handle
+          className="absolute right-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-r-md bg-white/10 touch-none select-none"
+          onPointerDown={(e) => { e.stopPropagation(); onTrimRight(e); }}
         />
       )}
     </div>

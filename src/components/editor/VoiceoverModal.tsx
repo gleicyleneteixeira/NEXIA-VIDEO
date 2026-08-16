@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X, Mic, Square, AlertTriangle } from "lucide-react";
+import { X, Mic, Square, AlertTriangle, VolumeX, Volume2 } from "lucide-react";
 import { useProjectStore, usePlaybackStore, useUIStore } from "@/lib/editor";
 import { withHistory } from "@/lib/editor/history";
 import type { TimelineItem } from "@/lib/editor";
 
 const BAR_COUNT = 20;
+const COUNTDOWN_SECONDS = 3;
 
 function formatElapsed(ms: number): string {
   const total = Math.floor(ms / 1000);
@@ -18,19 +19,28 @@ function formatElapsed(ms: number): string {
 const EMPTY_LEVELS = new Array(BAR_COUNT).fill(0);
 
 /**
- * Gravação de narração (voiceover) via MediaRecorder.
- *  - Pede permissão do microfone (getUserMedia).
- *  - Mede o nível de áudio em tempo real (VU meter via AnalyserNode).
- *  - Dá play automático na timeline a partir da posição da agulha.
- *  - Ao parar: gera o Blob de áudio + ObjectURL e cria um clipe na timeline
- *    que inicia exatamente onde a gravação começou (com waveform na faixa).
+ * Gravação de narração (voiceover) estilo CapCut:
+ *  - Solicita a permissão do microfone AO ABRIR o modal (getUserMedia).
+ *  - Contagem regressiva 3 → 2 → 1 antes de gravar.
+ *  - Sync com a timeline: o clipe começa exatamente no frame onde a gravação
+ *    começou (currentTime) e a duração é (currentTime ao parar) − início.
+ *  - Play automático do projeto durante a gravação (com opção de silenciar o
+ *    vídeo para evitar microfonia).
+ *  - VU meter em tempo real (AnalyserNode) alimentando as barras.
+ *  - Auto-stop quando a timeline chega ao fim (Preview pausa → finaliza).
+ *  - Libera o stream/contexto ao fechar para o navegador não manter o mic ativo.
  */
 export default function VoiceoverModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [recording, setRecording] = useState(false);
-  const [starting, setStarting] = useState(false);
+  const [stage, setStage] = useState<"idle" | "countdown" | "recording">("idle");
+  const [micReady, setMicReady] = useState(false);
+  const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [error, setError] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [levels, setLevels] = useState<number[]>(EMPTY_LEVELS);
+  const [starting, setStarting] = useState(false);
+  // Silenciar o vídeo durante a gravação vem MARCADO por padrão — evita que a
+  // narração capture o áudio do próprio projeto (eco/microfonia).
+  const [muteWhileRecording, setMuteWhileRecording] = useState(true);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -39,14 +49,18 @@ export default function VoiceoverModal({ open, onClose }: { open: boolean; onClo
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startedAtRef = useRef(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startFrameRef = useRef(0);
+  const discardRef = useRef(false);
+  const muteSnapshotRef = useRef<{ trackId: string; muted: boolean }[]>([]);
 
   const stopMeter = useCallback(() => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     if (timerRef.current !== null) clearInterval(timerRef.current);
     timerRef.current = null;
+    if (countdownRef.current !== null) clearInterval(countdownRef.current);
+    countdownRef.current = null;
   }, []);
 
   const releaseResources = useCallback(() => {
@@ -59,23 +73,22 @@ export default function VoiceoverModal({ open, onClose }: { open: boolean; onClo
     chunksRef.current = [];
   }, []);
 
-  const handleStart = useCallback(async () => {
-    setError(null);
-    setStarting(true);
+  // Cria o stream do microfone + MediaRecorder + AnalyserNode (VU meter).
+  const ensureMic = useCallback(async (): Promise<boolean> => {
+    if (streamRef.current) return true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
       const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
+      recorderRef.current = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      recorderRef.current.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
-      recorderRef.current = recorder;
 
-      // AnalyserNode para o medidor VU (volume do mic em tempo real)
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new Ctx();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
@@ -84,17 +97,8 @@ export default function VoiceoverModal({ open, onClose }: { open: boolean; onClo
       audioCtxRef.current = ctx;
       analyserRef.current = analyser;
 
-      // Marca o frame de início e dá play automático na timeline
-      startFrameRef.current = usePlaybackStore.getState().currentTime || 0;
-      setElapsedMs(0);
-      recorder.start(250);
-      setRecording(true);
-      startedAtRef.current = performance.now();
-      usePlaybackStore.getState().play();
-
-      timerRef.current = setInterval(() => {
-        setElapsedMs(performance.now() - startedAtRef.current);
-      }, 100);
+      setMicReady(true);
+      setError(null);
 
       const draw = () => {
         const an = analyserRef.current;
@@ -117,82 +121,173 @@ export default function VoiceoverModal({ open, onClose }: { open: boolean; onClo
         rafRef.current = requestAnimationFrame(draw);
       };
       rafRef.current = requestAnimationFrame(draw);
+      return true;
     } catch (e) {
       setError(
         e instanceof Error
           ? `Não foi possível acessar o microfone: ${e.message}`
           : "Não foi possível acessar o microfone."
       );
-    } finally {
-      setStarting(false);
+      return false;
     }
   }, []);
+
+  // Silencia temporariamente as trilhas de vídeo (evita microfonia na gravação).
+  const applyMuteSnapshot = useCallback(() => {
+    const tl = useProjectStore.getState().project.timeline;
+    muteSnapshotRef.current = tl.trackOrder
+      .filter((tid) => tl.tracks[tid]?.kind === "video")
+      .map((tid) => ({ trackId: tid, muted: !!tl.tracks[tid]?.muted }));
+    muteSnapshotRef.current.forEach(({ trackId }) => {
+      useProjectStore.getState().updateTrack(trackId, { muted: true });
+    });
+  }, []);
+
+  const restoreMuteSnapshot = useCallback(() => {
+    const snap = muteSnapshotRef.current;
+    muteSnapshotRef.current = [];
+    snap.forEach(({ trackId, muted }) => {
+      useProjectStore.getState().updateTrack(trackId, { muted });
+    });
+  }, []);
+
+  const finalize = useCallback((blob: Blob) => {
+    const fps = useProjectStore.getState().project.timeline.fps || 30;
+    const endFrame = usePlaybackStore.getState().currentTime;
+    // Duração sincronizada com a timeline (currentTime está em frames).
+    const durationInFrames = Math.max(
+      Math.round(fps * 0.5),
+      Math.round(endFrame - startFrameRef.current)
+    );
+    const url = URL.createObjectURL(blob);
+    const file = new File([blob], "narracao.webm", { type: blob.type || "audio/webm" });
+
+    const holder: { item: TimelineItem | null } = { item: null };
+    withHistory("Gravar narração", () => {
+      holder.item = useProjectStore.getState().addVoiceover({
+        src: url,
+        file,
+        startFrame: startFrameRef.current,
+        durationInFrames,
+        name: "Narração",
+      });
+    });
+    useUIStore.getState().clearSelection();
+    if (holder.item) useUIStore.getState().select(holder.item.id);
+    releaseResources();
+    setMicReady(false);
+    onClose();
+  }, [onClose, releaseResources]);
 
   const handleStop = useCallback(() => {
     const recorder = recorderRef.current;
     stopMeter();
-    setRecording(false);
+    setStage("idle");
     usePlaybackStore.getState().pause();
-
-    const finalize = (blob: Blob) => {
-      const fps = useProjectStore.getState().project.timeline.fps || 30;
-      const durMs = Math.max(100, performance.now() - startedAtRef.current);
-      const durationInFrames = Math.max(1, Math.round((durMs / 1000) * fps));
-      const url = URL.createObjectURL(blob);
-      const file = new File([blob], "narracao.webm", { type: blob.type || "audio/webm" });
-
-      const holder: { item: TimelineItem | null } = { item: null };
-      withHistory("Gravar narração", () => {
-        holder.item = useProjectStore.getState().addVoiceover({
-          src: url,
-          file,
-          startFrame: startFrameRef.current,
-          durationInFrames,
-          name: "Narração",
-        });
-      });
-      useUIStore.getState().clearSelection();
-      if (holder.item) useUIStore.getState().select(holder.item.id);
-      releaseResources();
-      onClose();
-    };
+    restoreMuteSnapshot();
 
     if (recorder && recorder.state !== "inactive") {
       recorder.onstop = () => {
+        if (discardRef.current) return;
         finalize(new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }));
       };
       recorder.stop();
-    } else {
+    } else if (!discardRef.current) {
       finalize(new Blob(chunksRef.current, { type: "audio/webm" }));
     }
-  }, [stopMeter, releaseResources, onClose]);
+  }, [stopMeter, restoreMuteSnapshot, finalize]);
 
-  // Fechar o modal no meio de uma gravação descarta a captura sem salvar.
+  const beginRecording = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+
+    startFrameRef.current = usePlaybackStore.getState().currentTime || 0;
+    setElapsedMs(0);
+    setStage("recording");
+    discardRef.current = false;
+
+    recorder.onstop = () => {
+      if (discardRef.current) return;
+      finalize(new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }));
+    };
+    recorder.start(100);
+    usePlaybackStore.getState().play();
+
+    // Timer sincronizado com o relógio da timeline + auto-stop no fim da peça.
+    timerRef.current = setInterval(() => {
+      const fps = useProjectStore.getState().project.timeline.fps || 30;
+      setElapsedMs(Math.max(0, ((usePlaybackStore.getState().currentTime - startFrameRef.current) * 1000) / fps));
+      if (!usePlaybackStore.getState().isPlaying) {
+        handleStop();
+      }
+    }, 100);
+  }, [handleStop, finalize]);
+
+  const startCountdown = useCallback(() => {
+    // Muda o estado do vídeo AINDA na contagem (3..2..1), não só ao gravar.
+    if (muteWhileRecording) applyMuteSnapshot();
+    setCountdown(COUNTDOWN_SECONDS);
+    setStage("countdown");
+    let count = COUNTDOWN_SECONDS;
+    countdownRef.current = setInterval(() => {
+      count--;
+      if (count <= 0) {
+        if (countdownRef.current !== null) clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        beginRecording();
+      } else {
+        setCountdown(count);
+      }
+    }, 1000);
+  }, [muteWhileRecording, applyMuteSnapshot, beginRecording]);
+
+  const handleStart = useCallback(async () => {
+    setError(null);
+    if (!streamRef.current) {
+      setStarting(true);
+      const ok = await ensureMic();
+      setStarting(false);
+      if (!ok) return;
+    }
+    startCountdown();
+  }, [ensureMic, startCountdown]);
+
+  // Solicita permissão do microfone e inicia o medidor VU.
   useEffect(() => {
-    if (!open) {
+    if (!open) return;
+    discardRef.current = false;
+    // ensureMic só notifica o estado (setMicReady/setError) de forma assíncrona,
+    // após o await do getUserMedia — nada de setState síncrono aqui.
+    Promise.resolve().then(() => ensureMic());
+  }, [open, ensureMic]);
+
+  // Cleanup ao desmontar (o modal é remontado por ciclo de abertura via `key`
+  // no Timeline, então unmount == fechamento): descarta a captura em andamento
+  // SEM inserir clipe, pausa o playback, restaura o som do vídeo e libera o
+  // microfone — o navegador não mantém o stream ativo.
+  useEffect(() => {
+    return () => {
+      discardRef.current = true;
+      if (usePlaybackStore.getState().isPlaying) usePlaybackStore.getState().pause();
       if (recorderRef.current && recorderRef.current.state === "recording") {
         recorderRef.current.stop();
       }
-      stopMeter();
-      releaseResources();
-      setRecording(false);
-    }
-  }, [open, stopMeter, releaseResources]);
-
-  // Cleanup final ao desmontar.
-  useEffect(() => {
-    return () => {
+      restoreMuteSnapshot();
       stopMeter();
       releaseResources();
     };
-  }, [stopMeter, releaseResources]);
+  }, [stopMeter, releaseResources, restoreMuteSnapshot]);
 
   if (!open) return null;
+
+  const recording = stage === "recording";
+  const inCountdown = stage === "countdown";
+  const levelsToShow = recording ? levels : micReady ? levels.map((l) => l * 0.55) : EMPTY_LEVELS;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
-      onClick={() => { if (!recording) onClose(); }}
+      onClick={() => { if (!recording && !inCountdown) onClose(); }}
     >
       <div
         className="w-[400px] bg-[#13131f]/95 border border-white/10 rounded-xl shadow-2xl p-5 flex flex-col gap-4 font-sans text-white text-xs"
@@ -202,6 +297,9 @@ export default function VoiceoverModal({ open, onClose }: { open: boolean; onClo
           <span className="text-sm font-semibold flex items-center gap-1.5">
             <Mic size={16} className="text-[#f472b6]" />
             Gravar Narração
+          </span>
+          <span className={`text-[10px] font-semibold ${recording ? "text-red-400 animate-pulse" : "text-gray-500"}`}>
+            {recording ? "GRAVANDO" : micReady ? "Microfone pronto" : starting ? "Solicitando permissão..." : "Sem microfone"}
           </span>
           <button
             onClick={onClose}
@@ -218,27 +316,22 @@ export default function VoiceoverModal({ open, onClose }: { open: boolean; onClo
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-gray-400 uppercase font-semibold">Nível de Áudio</span>
             <span className={`font-mono font-semibold ${recording ? "text-[#f472b6]" : "text-gray-500"}`}>
-              {formatElapsed(recording ? elapsedMs : 0)}
+              {recording ? formatElapsed(elapsedMs) : "00:00"}
             </span>
           </div>
           <div className="flex items-end gap-[3px] h-10 bg-black/40 rounded-md px-2 py-1.5">
-            {(recording ? levels : EMPTY_LEVELS).map((lvl, i) => (
+            {levelsToShow.map((lvl, i) => (
               <div
                 key={i}
                 className="flex-1 rounded-sm transition-[height] duration-75"
                 style={{
                   height: `${Math.round(Math.max(lvl, 0.04) * 100)}%`,
                   backgroundColor: lvl > 0.8 ? "#f43f5e" : lvl > 0.5 ? "#f472b6" : "#22d3ee",
-                  opacity: recording ? 0.9 : 0.15,
+                  opacity: recording || micReady ? 0.9 : 0.15,
                 }}
               />
             ))}
           </div>
-          <p className="text-[10px] text-white/40 leading-relaxed">
-            {recording
-              ? "A reprodução está em andamento — fale por cima do vídeo. O clipe começa na posição da gravação."
-              : "Ao iniciar, dá play automático no vídeo a partir da agulha. Quando parar, o clipe de áudio entra no timeline no mesmo ponto."}
-          </p>
         </div>
 
         {error && (
@@ -248,26 +341,69 @@ export default function VoiceoverModal({ open, onClose }: { open: boolean; onClo
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-3">
-          {!recording ? (
+        {/* Contagem regressiva centralizada (3, 2, 1) */}
+        {inCountdown && (
+          <div className="flex flex-col items-center gap-2 py-4">
+            <div className="text-[72px] font-bold text-white drop-shadow-[0_0_24px_rgba(244,114,182,0.6)] leading-none animate-in zoom-in-90 duration-200">
+              {countdown}
+            </div>
+            <p className="text-[11px] text-white/50">Prepare-se… a gravação começa automaticamente.</p>
+          </div>
+        )}
+
+        {/* Botão circular Gravar / Parar (feedback pulsante vermelho) */}
+        <div className="flex flex-col items-center gap-3 py-1">
+          <button
+            onClick={recording ? () => handleStop() : handleStart}
+            disabled={starting || inCountdown}
+            title={recording ? "Parar e inserir na timeline" : "Iniciar gravação (conta 3, 2, 1)"}
+            className={`relative w-16 h-16 rounded-full flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+              recording
+                ? "bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/40 animate-pulse ring-4 ring-red-600/30"
+                : "bg-[#ec4899] hover:bg-[#db2777] text-white shadow-lg shadow-pink-600/30"
+            }`}
+          >
+            {recording ? <Square size={22} fill="currentColor" /> : <Mic size={22} />}
+            {recording && <span className="absolute inset-0 rounded-full border-2 border-red-400/60 animate-ping pointer-events-none" />}
+          </button>
+          <span className="text-[11px] text-gray-400">
+            {starting
+              ? "Pedindo permissão do microfone…"
+              : recording
+                ? "Gravando — parar para inserir na timeline"
+                : inCountdown
+                  ? "Contagem regressiva…"
+                  : micReady
+                    ? "Toque para gravar (3, 2, 1)"
+                    : "Clique para solicitar o microfone"}
+          </span>
+
+          {/* Checkbox: silenciar vídeo durante a contagem e a gravação */}
+          <label className={`flex items-center gap-2 cursor-pointer select-none transition-colors ${inCountdown || recording ? "opacity-50 cursor-not-allowed text-gray-500" : "text-gray-300 hover:text-white"}`}>
             <button
-              onClick={handleStart}
-              disabled={starting}
-              className="px-4 py-2 rounded-lg bg-[#f472b6] hover:bg-[#ec4899] text-white font-semibold transition-all shadow-md shadow-pink-600/20 flex items-center gap-2 disabled:opacity-50"
+              type="button"
+              role="checkbox"
+              aria-checked={muteWhileRecording}
+              disabled={inCountdown || recording}
+              onClick={() => setMuteWhileRecording((v) => !v)}
+              className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                muteWhileRecording ? "bg-[#f472b6] border-[#f472b6]" : "border-white/30 bg-black/30"
+              }`}
             >
-              <Mic size={14} />
-              {starting ? "Pedindo permissão..." : "Iniciar Gravação"}
+              {muteWhileRecording && <span className="text-[10px] text-white font-bold">✓</span>}
             </button>
-          ) : (
-            <button
-              onClick={handleStop}
-              className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-400 text-white font-semibold transition-all shadow-md shadow-red-600/20 flex items-center gap-2"
-            >
-              <Square size={14} fill="currentColor" />
-              Parar e Inserir na Timeline
-            </button>
-          )}
+            <span className="flex items-center gap-1 text-[11px]">
+              {muteWhileRecording ? <VolumeX size={12} className="text-[#f472b6]" /> : <Volume2 size={12} className="text-gray-500" />}
+              Silenciar vídeo durante a gravação
+            </span>
+          </label>
         </div>
+
+        <p className="text-[10px] text-white/40 leading-relaxed border-t border-white/10 pt-3">
+          A gravação inicia após a contagem com o vídeo tocando no ponto da agulha.
+          Ao parar (ou chegar ao fim da timeline), o clipe de áudio entra na faixa
+          de narração exatamente onde a gravação começou.
+        </p>
       </div>
     </div>
   );

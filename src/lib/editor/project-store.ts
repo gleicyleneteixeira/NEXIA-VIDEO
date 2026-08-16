@@ -3,14 +3,21 @@ import { persist } from "zustand/middleware";
 import type { StateCreator } from "zustand";
 import type {
   Project, TimelineItem, TrackFlags, Transition, TransitionType,
-  ClipTransform, ClipFilters, ClipCrop, ClipMask, ChromaKey, AutoCutout,
+  ClipTransform, ClipFilters, ClipCrop, ClipMask, ChromaKey, AutoCutoutConfig, ManualMask,
   ClipSpeed, ClipAnimation, ClipAudio, BlendMode, FilterPreset,
   VideoEffect, TextProps, CanvasSettings, SpeedCurvePoint, ItemKeyframes,
   Watermark, ExportSettings, BeatMarker, BrandKit,
 } from "./types";
 import { usePlaybackStore } from "./playback-store";
 import { createDefaultProject, createDefaultItem, generateId, DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, DEFAULT_WATERMARK, DEFAULT_BRAND_KIT, DEFAULT_EXPORT_SETTINGS } from "./types";
-import { bringTrackToFront, sendTrackToBack, reorderTrackLayers } from "./layers";
+import {
+  bringTrackToFront, sendTrackToBack, reorderTrackLayers,
+  bringClipToFront as applyBringClipToFront,
+  sendClipToBack as applySendClipToBack,
+  moveClipLayerUp as applyMoveClipLayerUp,
+  moveClipLayerDown as applyMoveClipLayerDown,
+} from "./layers";
+import { rippleDeleteClips, rippleTrimStart as applyRippleTrimStart, rippleTrimEnd as applyRippleTrimEnd, packMainTrackClips, getMainTrackId } from "./ripple";
 
 function syncCompatibilityFields(item: TimelineItem, fps: number): TimelineItem {
   return {
@@ -74,6 +81,8 @@ interface ProjectState {
   removeItem: (id: string) => void;
   rippleDelete: (ids: string[]) => void;
   compactTrackGaps: () => void;
+  rippleTrimStart: (id: string, atFrame: number) => void;
+  rippleTrimEnd: (id: string, atFrame: number) => void;
   updateItem: (id: string, patch: Partial<TimelineItem>) => void;
   moveItem: (id: string, patch: { trackId?: string; startFrame?: number }) => void;
   splitItem: (id: string, atFrame: number) => TimelineItem | null;
@@ -101,7 +110,8 @@ interface ProjectState {
   toggleEffect: (id: string, effectId: string) => void;
   setMask: (id: string, mask: Partial<ClipMask>) => void;
   setChromaKey: (id: string, key: Partial<ChromaKey>) => void;
-  setAutoCutout: (id: string, cutout: Partial<AutoCutout>) => void;
+  setAutoCutout: (id: string, cutout: Partial<AutoCutoutConfig>) => void;
+  setManualMask: (id: string, mask: Partial<ManualMask>) => void;
   setCanvas: (canvas: Partial<CanvasSettings>) => void;
   setKeyframe: (id: string, prop: string, keyframe: import("./types").Keyframe) => void;
   removeKeyframe: (id: string, prop: string, frame: number) => void;
@@ -122,6 +132,12 @@ interface ProjectState {
   sendTrackToBack: (id: string) => void;
   reorderTrackLayer: (id: string, newIndex: number) => void;
 
+  // Gerenciamento de camadas por CLIPE (estilo CapCut)
+  bringClipToFront: (id: string) => void;
+  sendClipToBack: (id: string) => void;
+  moveClipLayerUp: (id: string) => void;
+  moveClipLayerDown: (id: string) => void;
+
   addTransition: (transition: Transition) => void;
   removeTransition: (id: string) => void;
   updateTransition: (id: string, patch: Partial<Transition>) => void;
@@ -129,7 +145,33 @@ interface ProjectState {
 
 export const useProjectStore = create<ProjectState>()(
   persist(
-    ((set: (partial: Partial<ProjectState> | ((s: ProjectState) => Partial<ProjectState>)) => void, get: () => ProjectState): ProjectState => ({
+    ((rawSet: (partial: Partial<ProjectState> | ((s: ProjectState) => Partial<ProjectState>)) => void, get: () => ProjectState): ProjectState => {
+      // Trilha Magnética (estilo CapCut): após QUALQUER alteração de estado,
+      // compacta a trilha principal encadeando os clipes sem vãos.
+      const set: typeof rawSet = (partial) => {
+        rawSet((state: ProjectState) => {
+          const update = typeof partial === "function" ? partial(state) : partial;
+          if (update && update.project) {
+            const mainTrackId = getMainTrackId(update.project.timeline);
+            const packed = packMainTrackClips(update.project.timeline.items, mainTrackId);
+            if (packed !== update.project.timeline.items) {
+              const fps = update.project.timeline.fps || 30;
+              const items = packed.map((i: TimelineItem) => syncCompatibilityFields(i, fps));
+              ensurePlaybackStops(items);
+              return {
+                ...update,
+                project: {
+                  ...update.project,
+                  updatedAt: new Date().toISOString(),
+                  timeline: { ...update.project.timeline, items },
+                },
+              };
+            }
+          }
+          return update;
+        });
+      };
+      return {
       project: createDefaultProject(),
 
       setProject: (p: Project) => set({ project: p }),
@@ -167,28 +209,12 @@ export const useProjectStore = create<ProjectState>()(
       rippleDelete: (ids: string[]) =>
         set((s: ProjectState) => {
           if (ids.length === 0) return {};
+          const fps = s.project.timeline.fps || 30;
+          const repositioned = rippleDeleteClips(s.project.timeline.items, ids);
+          if (repositioned.length === s.project.timeline.items.length) return {};
+
           const removedSet = new Set(ids);
-          const removed = s.project.timeline.items.filter((i: TimelineItem) => ids.includes(i.id));
-          if (removed.length === 0) return {};
-
-          const byTrack = new Map<string, TimelineItem[]>();
-          removed.forEach((i: TimelineItem) => {
-            const group = byTrack.get(i.trackId) || [];
-            group.push(i);
-            byTrack.set(i.trackId, group);
-          });
-
-          const newItems = s.project.timeline.items
-            .filter((i: TimelineItem) => !removedSet.has(i.id))
-            .map((i: TimelineItem) => {
-              const group = byTrack.get(i.trackId);
-              if (!group) return i;
-              let shift = 0;
-              for (const r of group) {
-                if (r.startFrame <= i.startFrame) shift += r.durationInFrames;
-              }
-              return shift > 0 ? { ...i, startFrame: Math.max(0, i.startFrame - shift) } : i;
-            });
+          const newItems = repositioned.map((i: TimelineItem) => syncCompatibilityFields(i, fps));
 
           const lastEnd = newItems.length > 0
             ? Math.max(...newItems.map((i: TimelineItem) => i.startFrame + i.durationInFrames))
@@ -209,6 +235,40 @@ export const useProjectStore = create<ProjectState>()(
                   (t: Transition) => !removedSet.has(t.fromItemId) && !removedSet.has(t.toItemId)
                 ),
               },
+            },
+          };
+        }),
+
+      // "Cortar e deletar trecho" à esquerda: remove a porção antes do playhead
+      // e puxa os clipes seguintes da mesma faixa (Ripple).
+      rippleTrimStart: (id: string, atFrame: number) =>
+        set((s: ProjectState) => {
+          const fps = s.project.timeline.fps || 30;
+          const newItems = applyRippleTrimStart(s.project.timeline.items, id, atFrame).map(
+            (i: TimelineItem) => syncCompatibilityFields(i, fps)
+          );
+          ensurePlaybackStops(newItems);
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, items: newItems },
+            },
+          };
+        }),
+
+      // "Cortar e deletar trecho" à direita: remove a porção depois do playhead
+      // e puxa os clipes seguintes da mesma faixa (Ripple).
+      rippleTrimEnd: (id: string, atFrame: number) =>
+        set((s: ProjectState) => {
+          const fps = s.project.timeline.fps || 30;
+          const newItems = applyRippleTrimEnd(s.project.timeline.items, id, atFrame).map(
+            (i: TimelineItem) => syncCompatibilityFields(i, fps)
+          );
+          ensurePlaybackStops(newItems);
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, items: newItems },
             },
           };
         }),
@@ -351,7 +411,7 @@ export const useProjectStore = create<ProjectState>()(
             newTrackId = candidate;
           }
           let tracks = project.timeline.tracks;
-          let trackOrder = [...project.timeline.trackOrder];
+          const trackOrder = [...project.timeline.trackOrder];
           if (!newTrackId) {
             newTrackId = generateId();
             const count = Object.keys(tracks).length;
@@ -477,7 +537,7 @@ export const useProjectStore = create<ProjectState>()(
           }
 
           let tracks = tl.tracks;
-          let trackOrder = [...tl.trackOrder];
+          const trackOrder = [...tl.trackOrder];
           if (!audioTrackId) {
             audioTrackId = generateId();
             const audioTrack: TrackFlags = {
@@ -693,11 +753,19 @@ export const useProjectStore = create<ProjectState>()(
           },
         })),
 
-      setAutoCutout: (id: string, cutout: Partial<AutoCutout>) =>
+      setAutoCutout: (id: string, cutout: Partial<AutoCutoutConfig>) =>
         set((s: ProjectState) => ({
           project: {
             ...s.project, updatedAt: new Date().toISOString(),
             timeline: { ...s.project.timeline, items: s.project.timeline.items.map((i: TimelineItem) => i.id === id ? { ...i, autoCutout: { enabled: false, ...i.autoCutout, ...cutout } } : i) },
+          },
+        })),
+
+      setManualMask: (id: string, mask: Partial<ManualMask>) =>
+        set((s: ProjectState) => ({
+          project: {
+            ...s.project, updatedAt: new Date().toISOString(),
+            timeline: { ...s.project.timeline, items: s.project.timeline.items.map((i: TimelineItem) => i.id === id ? { ...i, manualMask: { enabled: false, radius: 32, eraser: false, ...i.manualMask, ...mask } } : i) },
           },
         })),
 
@@ -848,6 +916,59 @@ export const useProjectStore = create<ProjectState>()(
           return { project: { ...s.project, updatedAt: new Date().toISOString(), timeline: { ...s.project.timeline, trackOrder: order } } };
         }),
 
+      // ── Camadas de clipe (Trazer à frente / Enviar para trás / Subir / Descer) ──
+      bringClipToFront: (id: string) =>
+        set((s: ProjectState) => {
+          const items = applyBringClipToFront(s.project.timeline.items, s.project.timeline.trackOrder, id);
+          if (items === s.project.timeline.items) return {};
+          const fps = s.project.timeline.fps || 30;
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, items: items.map((i: TimelineItem) => syncCompatibilityFields(i, fps)) },
+            },
+          };
+        }),
+
+      sendClipToBack: (id: string) =>
+        set((s: ProjectState) => {
+          const items = applySendClipToBack(s.project.timeline.items, s.project.timeline.trackOrder, id);
+          if (items === s.project.timeline.items) return {};
+          const fps = s.project.timeline.fps || 30;
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, items: items.map((i: TimelineItem) => syncCompatibilityFields(i, fps)) },
+            },
+          };
+        }),
+
+      moveClipLayerUp: (id: string) =>
+        set((s: ProjectState) => {
+          const items = applyMoveClipLayerUp(s.project.timeline.items, s.project.timeline.trackOrder, id);
+          if (items === s.project.timeline.items) return {};
+          const fps = s.project.timeline.fps || 30;
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, items: items.map((i: TimelineItem) => syncCompatibilityFields(i, fps)) },
+            },
+          };
+        }),
+
+      moveClipLayerDown: (id: string) =>
+        set((s: ProjectState) => {
+          const items = applyMoveClipLayerDown(s.project.timeline.items, s.project.timeline.trackOrder, id);
+          if (items === s.project.timeline.items) return {};
+          const fps = s.project.timeline.fps || 30;
+          return {
+            project: {
+              ...s.project, updatedAt: new Date().toISOString(),
+              timeline: { ...s.project.timeline, items: items.map((i: TimelineItem) => syncCompatibilityFields(i, fps)) },
+            },
+          };
+        }),
+
       addTransition: (transition: Transition) =>
         set((s: ProjectState) => ({
           project: { ...s.project, timeline: { ...s.project.timeline, transitions: [...s.project.timeline.transitions, transition] } },
@@ -918,7 +1039,8 @@ export const useProjectStore = create<ProjectState>()(
         set((s: ProjectState) => ({
           project: { ...s.project, updatedAt: new Date().toISOString(), timeline: { ...s.project.timeline, beatMarkers: [] } },
         })),
-    })) as StateCreator<ProjectState, [], [], ProjectState>,
+      };
+    }) as StateCreator<ProjectState, [], [], ProjectState>,
     {
       name: "contenthub-editor-project",
       partialize: (state: ProjectState) => ({ project: state.project }),
@@ -950,5 +1072,5 @@ export const useProjectStore = create<ProjectState>()(
 );
 
 if (typeof window !== "undefined") {
-  (window as any).__projectStore = useProjectStore;
+  (window as unknown as { __projectStore: typeof useProjectStore }).__projectStore = useProjectStore;
 }
