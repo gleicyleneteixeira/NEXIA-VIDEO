@@ -5,6 +5,8 @@ import { PanelLeftClose, PanelLeftOpen, Undo2, Redo2, Save } from "lucide-react"
 import { useUIStore, useProjectStore, useMediaStore, usePlaybackStore } from "@/lib/editor";
 import type { TimelineItem } from "@/lib/editor";
 import { DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_TEXT_PROPS, DEFAULT_CANVAS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, generateId, createDefaultItem, ASPECT_RATIOS } from "@/lib/editor";
+import { consumePendingPostImport } from "@/lib/editor/pendingPost";
+import { withHistory } from "@/lib/editor/history";
 import Timeline from "@/components/editor/Timeline";
 import Preview from "@/components/editor/Preview";
 import PropertiesPanel from "@/components/editor/PropertiesPanel";
@@ -142,6 +144,59 @@ export default function EditorPage() {
     window.addEventListener("editor-media-import", handleMediaImport);
     return () => window.removeEventListener("editor-media-import", handleMediaImport);
   }, [handleMediaImport]);
+
+  // Import pendente vindo do "Criar Vídeo no Editor" (calendário/posts).
+  useEffect(() => {
+    const pending = consumePendingPostImport();
+    if (!pending) return;
+
+    try {
+      const state = useProjectStore.getState();
+      const timeline = state.project.timeline;
+      const videoTrackId = timeline.trackOrder.find(
+        (trackId) => timeline.tracks[trackId]?.kind === "video"
+      );
+      const textTrackId = timeline.trackOrder.find(
+        (trackId) => timeline.tracks[trackId]?.kind === "text"
+      );
+
+      let imageId = "";
+      if (videoTrackId) {
+        const imageItem = createDefaultItem({
+          trackId: videoTrackId,
+          startFrame: 0,
+          durationInFrames: 90,
+          name: `Post DIA ${pending.dayNumber} (${pending.pillarLabel})`,
+          kind: "image",
+          src: pending.imageDataUrl,
+          mediaWidth: 1080,
+          mediaHeight: 1080,
+        });
+        imageId = imageItem.id;
+        withHistory("Inserir imagem do post", () => state.addItem(imageItem));
+      }
+
+      if (textTrackId) {
+        const textItem = createDefaultItem({
+          trackId: textTrackId,
+          startFrame: 0,
+          durationInFrames: 90,
+          name: `Gancho DIA ${pending.dayNumber}`,
+          kind: "text",
+          text: {
+            ...DEFAULT_TEXT_PROPS,
+            content: pending.hook,
+            fontSize: 64,
+          },
+        });
+        withHistory("Inserir gancho do post", () => state.addItem(textItem));
+      }
+
+      void imageId;
+    } catch {
+      /* import pendente falhou — o editor abre vazio sem quebrar */
+    }
+  }, []);
 
   // Restore media persisted in IndexedDB and re-point project items to it.
   useEffect(() => {
