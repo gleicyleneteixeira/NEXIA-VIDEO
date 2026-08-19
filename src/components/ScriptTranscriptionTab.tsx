@@ -8,14 +8,18 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Clipboard,
+  ClipboardPaste,
   CloudUpload,
   Copy,
   FileText,
   History,
+  ListChecks,
   Loader2,
   Mic,
   RefreshCcw,
   Sparkles,
+  Square,
   Trash2,
 } from "lucide-react";
 import { LocalWhisperService, WHISPER_MODELS } from "@/services/localWhisperService";
@@ -41,13 +45,15 @@ export default function ScriptTranscriptionTab({
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState("");
-  const [text, setText] = useState("");
+  const [transcribedText, setTranscribedText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [model, setModel] = useState<WhisperModelId>("Xenova/whisper-tiny");
   const [isDragOver, setIsDragOver] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [history, setHistory] = useState<TranscriptionHistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+  const [isHistorySelectionMode, setIsHistorySelectionMode] = useState(false);
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
 
   // Carrega o historico de transcricoes salvas (IndexedDB) no mount
   useEffect(() => {
@@ -63,7 +69,9 @@ export default function ScriptTranscriptionTab({
   }, []);
 
   const isBusy = status === "working";
-  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const wordCount = transcribedText.trim()
+    ? transcribedText.trim().split(/\s+/).length
+    : 0;
 
   const handleFile = async (file: File | undefined | null) => {
     if (!file || isBusy) return;
@@ -81,7 +89,7 @@ export default function ScriptTranscriptionTab({
     setStatus("working");
     setProgress(0);
     setError("");
-    setText("");
+    setTranscribedText("");
     setStatusText("Preparando...");
 
     try {
@@ -93,7 +101,7 @@ export default function ScriptTranscriptionTab({
           setStatusText(msg);
         }
       );
-      setText(result);
+      setTranscribedText(result);
       setStatus("done");
       try {
         const saved = await TranscriptionHistoryService.saveItem(result, fileName ?? "");
@@ -111,11 +119,24 @@ export default function ScriptTranscriptionTab({
     }
   };
 
-  const handleCopy = async () => {
-    if (!text.trim()) return;
-    await navigator.clipboard.writeText(text).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async (textToCopy: string, id: string) => {
+    if (!textToCopy.trim()) return;
+    await navigator.clipboard.writeText(textToCopy).catch(() => {});
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handlePasteToEditor = async () => {
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      if (clipboardText) {
+        setTranscribedText(clipboardText);
+        setStatus("done");
+        setError("");
+      }
+    } catch {
+      console.warn("Permissao de leitura da area de transferencia nao concedida.");
+    }
   };
 
   const handleReset = () => {
@@ -123,13 +144,15 @@ export default function ScriptTranscriptionTab({
     setProgress(0);
     setStatusText("");
     setError("");
-    setText("");
+    setTranscribedText("");
     setFileName(null);
+    setSelectedHistoryIds([]);
+    setIsHistorySelectionMode(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleLoadFromHistory = (item: TranscriptionHistoryItem) => {
-    setText(item.fullText);
+    setTranscribedText(item.fullText);
     setFileName(item.originalFileName);
     setStatus("done");
     setError("");
@@ -139,11 +162,37 @@ export default function ScriptTranscriptionTab({
   const handleDeleteHistory = async (id: string) => {
     await TranscriptionHistoryService.deleteItem(id).catch(() => {});
     setHistory((prev) => prev.filter((item) => item.id !== id));
+    setSelectedHistoryIds((prev) => prev.filter((selectedId) => selectedId !== id));
   };
 
   const handleClearHistory = async () => {
     await TranscriptionHistoryService.clearAll().catch(() => {});
     setHistory([]);
+    setSelectedHistoryIds([]);
+    setIsHistorySelectionMode(false);
+  };
+
+  const handleToggleHistorySelection = (id: string) => {
+    setSelectedHistoryIds((prev) =>
+      prev.includes(id) ? prev.filter((selectedId) => selectedId !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleAllHistory = () => {
+    setSelectedHistoryIds((prev) =>
+      prev.length === history.length ? [] : history.map((item) => item.id)
+    );
+  };
+
+  const handleDeleteSelectedHistory = async () => {
+    if (selectedHistoryIds.length === 0) return;
+    const ids = [...selectedHistoryIds];
+    for (const id of ids) {
+      await TranscriptionHistoryService.deleteItem(id).catch(() => {});
+    }
+    setHistory((prev) => prev.filter((item) => !ids.includes(item.id)));
+    setSelectedHistoryIds([]);
+    setIsHistorySelectionMode(false);
   };
 
   return (
@@ -260,8 +309,8 @@ export default function ScriptTranscriptionTab({
           </div>
 
           <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
+            value={transcribedText}
+            onChange={(e) => setTranscribedText(e.target.value)}
             placeholder="O texto transcrito aparecera aqui..."
             className="input-field w-full min-h-[220px] px-4 py-3 rounded-[12px] text-sm resize-y"
           />
@@ -272,21 +321,32 @@ export default function ScriptTranscriptionTab({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={() => void handleCopy()}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:text-white hover:border-[var(--primary)]/40 transition-all"
+              onClick={() => void handleCopy(transcribedText, "editor")}
+              disabled={!transcribedText.trim()}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:text-white hover:border-[var(--primary)]/40 transition-all disabled:opacity-50"
             >
-              {copied ? (
+              {copiedId === "editor" ? (
                 <Check className="w-4 h-4 text-[var(--accent-green)]" />
               ) : (
                 <Copy className="w-4 h-4" />
               )}
-              {copied ? "Copiado!" : "Copiar Texto"}
+              {copiedId === "editor" ? "Copiado!" : "Copiar Texto"}
             </button>
 
             <button
               type="button"
-              disabled={!text.trim()}
-              onClick={() => onUseAsBriefing(text)}
+              onClick={() => void handlePasteToEditor()}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:text-white hover:border-[var(--primary)]/40 transition-all"
+              title="Colar da area de transferencia"
+            >
+              <ClipboardPaste className="w-4 h-4" />
+              Colar da Area de Transferencia
+            </button>
+
+            <button
+              type="button"
+              disabled={!transcribedText.trim()}
+              onClick={() => onUseAsBriefing(transcribedText)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-[10px] text-sm font-semibold text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/30 transition-all disabled:opacity-50 disabled:pointer-events-none"
             >
               <Sparkles className="w-4 h-4" />
@@ -295,8 +355,8 @@ export default function ScriptTranscriptionTab({
 
             <button
               type="button"
-              disabled={!text.trim()}
-              onClick={() => onSendToContentCreator(text)}
+              disabled={!transcribedText.trim()}
+              onClick={() => onSendToContentCreator(transcribedText)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-[10px] text-sm font-medium bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--primary)]/40 transition-all disabled:opacity-50 disabled:pointer-events-none"
             >
               <CalendarDays className="w-4 h-4" />
@@ -330,26 +390,84 @@ export default function ScriptTranscriptionTab({
 
       {/* Gaveta: Historico de Transcricoes Recentes */}
       <div className="border border-[var(--border)] rounded-[14px] overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setIsHistoryOpen((v) => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-[var(--surface)]/50 hover:bg-[var(--surface)] transition-colors"
-        >
-          <span className="text-sm font-bold text-white flex items-center gap-2">
-            <History className="w-4 h-4 text-[var(--primary)]" />
-            Historico de Transcricoes Recentes
+        <div className="flex items-center justify-between gap-2 px-4 py-3 bg-[var(--surface)]/50">
+          <button
+            type="button"
+            onClick={() => setIsHistoryOpen((v) => !v)}
+            className="flex items-center gap-2 text-left min-w-0"
+          >
+            <History className="w-4 h-4 text-[var(--primary)] shrink-0" />
+            <span className="text-sm font-bold text-white truncate">
+              Historico de Transcricoes Recentes
+            </span>
             {history.length > 0 && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--primary)]/15 text-[var(--primary)]">
                 {history.length}
               </span>
             )}
-          </span>
-          {isHistoryOpen ? (
-            <ChevronDown className="w-4 h-4 text-[var(--text-secondary)]" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" />
+            {isHistoryOpen ? (
+              <ChevronDown className="w-4 h-4 text-[var(--text-secondary)] shrink-0" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-[var(--text-secondary)] shrink-0" />
+            )}
+          </button>
+
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsHistorySelectionMode((v) => {
+                  const next = !v;
+                  if (next) setSelectedHistoryIds([]);
+                  return next;
+                });
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-semibold transition-colors shrink-0 ${
+                isHistorySelectionMode
+                  ? "bg-[var(--danger)]/10 border border-[var(--danger)]/25 text-[var(--danger)] hover:bg-[var(--danger)]/20"
+                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--primary)]/40"
+              }`}
+            >
+              {isHistorySelectionMode ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <ListChecks className="w-3.5 h-3.5" />
+              )}
+              {isHistorySelectionMode ? "Cancelar" : "Selecionar"}
+            </button>
           )}
-        </button>
+        </div>
+
+        {isHistorySelectionMode && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-[var(--surface)]/30 border-t border-[var(--border)] flex-wrap">
+            <button
+              type="button"
+              onClick={handleToggleAllHistory}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-xs font-medium bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white transition-colors"
+            >
+              {selectedHistoryIds.length === history.length ? (
+                <Check className="w-3.5 h-3.5 text-[var(--accent-green)]" />
+              ) : (
+                <Square className="w-3.5 h-3.5" />
+              )}
+              {selectedHistoryIds.length === history.length
+                ? "Desmarcar Todos"
+                : "Selecionar Todos"}
+            </button>
+            <span className="text-xs text-[var(--text-secondary)]">
+              {selectedHistoryIds.length} selecionad{selectedHistoryIds.length === 1 ? "o" : "os"}
+            </span>
+            <button
+              type="button"
+              disabled={selectedHistoryIds.length === 0}
+              onClick={() => void handleDeleteSelectedHistory()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-xs font-semibold text-[var(--danger)] bg-[var(--danger)]/10 border border-[var(--danger)]/25 hover:bg-[var(--danger)]/20 transition-colors disabled:opacity-40 disabled:pointer-events-none ml-auto"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Excluir Selecionados ({selectedHistoryIds.length})
+            </button>
+          </div>
+        )}
 
         {isHistoryOpen && (
           <div className="divide-y divide-[var(--border)] max-h-64 overflow-y-auto">
@@ -360,8 +478,35 @@ export default function ScriptTranscriptionTab({
               </p>
             ) : (
               history.map((item) => (
-                <div key={item.id} className="px-4 py-3 flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
+                <div
+                  key={item.id}
+                  className={`px-4 py-3 flex items-center gap-3 transition-colors ${
+                    isHistorySelectionMode && selectedHistoryIds.includes(item.id)
+                      ? "bg-[var(--primary)]/10"
+                      : ""
+                  }`}
+                >
+                  {isHistorySelectionMode ? (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleHistorySelection(item.id)}
+                      className="flex items-center justify-center w-5 h-5 rounded-md border shrink-0 cursor-pointer transition-colors"
+                      title="Selecionar registro"
+                    >
+                      {selectedHistoryIds.includes(item.id) ? (
+                        <Check className="w-4 h-4 text-[var(--primary)]" />
+                      ) : (
+                        <Square className="w-4 h-4 text-[var(--text-secondary)]" />
+                      )}
+                    </button>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={() => handleLoadFromHistory(item)}
+                    className="flex-1 min-w-0 text-left"
+                    title="Carregar transcricao para edicao"
+                  >
                     <p className="text-sm font-semibold text-white truncate" title={item.title}>
                       {item.title}
                     </p>
@@ -375,29 +520,44 @@ export default function ScriptTranscriptionTab({
                       {" • "}
                       {item.wordCount.toLocaleString("pt-BR")} palavras
                     </p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleLoadFromHistory(item)}
-                      title="Carregar transcricao na tela"
-                      className="p-1.5 rounded-lg text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
-                    >
-                      <FileText className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteHistory(item.id)}
-                      title="Excluir registro"
-                      className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  </button>
+
+                  {!isHistorySelectionMode && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => void handleCopy(item.fullText, item.id)}
+                        title="Copiar transcricao"
+                        className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
+                      >
+                        {copiedId === item.id ? (
+                          <Check className="w-4 h-4 text-[var(--accent-green)]" />
+                        ) : (
+                          <Clipboard className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadFromHistory(item)}
+                        title="Carregar para edicao"
+                        className="p-1.5 rounded-lg text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteHistory(item.id)}
+                        title="Excluir registro"
+                        className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))
             )}
-            {history.length > 0 && (
+            {history.length > 0 && !isHistorySelectionMode && (
               <button
                 type="button"
                 onClick={() => void handleClearHistory()}
