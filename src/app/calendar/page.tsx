@@ -20,6 +20,7 @@ import PostCardItem from "@/components/calendar/PostCardItem";
 import { generateFullCalendarWithImages } from "@/lib/branding/fullCalendarGenerator";
 import { useBrandStore } from "@/lib/branding/brand-store";
 import { setPendingPostImport } from "@/lib/editor/pendingPost";
+import { consumePendingBrief } from "@/lib/pendingBrief";
 
 type PillarFilter = EditorialPillar | "all";
 
@@ -28,7 +29,7 @@ export default function CalendarPage() {
   const [nicho, setNicho] = useState("");
   const [servico, setServico] = useState("");
   const [beneficio, setBeneficio] = useState("");
-  const [dor, setDor] = useState("");
+  const [dor, setDor] = useState(() => consumePendingBrief() ?? "");
   const [startDate, setStartDate] = useState("");
   const [posts, setPosts] = useState<ContentPostItem[] | null>(null);
   const [filter, setFilter] = useState<PillarFilter>("all");

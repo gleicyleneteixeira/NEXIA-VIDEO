@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   Sparkles,
   Lightbulb,
@@ -21,10 +22,12 @@ import {
   CheckCircle,
   Zap,
   History,
+  Mic,
 } from "lucide-react";
 import { useOpenRouterModel } from "@/hooks/useOpenRouterModel";
 import { useBusinessProfiles } from "@/hooks/useBusinessProfiles";
 import { setPendingPostImport } from "@/lib/editor/pendingPost";
+import { setPendingBrief } from "@/lib/pendingBrief";
 import { refineSingleVariationWithAi } from "@/services/scriptAiRefiner";
 import { generateScriptsWithRealAI } from "@/services/aiScriptService";
 import { ScriptHistoryService, variationToSaved, savedVariationToVariation } from "@/services/scriptHistoryService";
@@ -32,6 +35,19 @@ import type { SavedScriptProject } from "@/services/scriptHistoryService";
 import ScriptHistoryPanel from "@/components/ScriptHistoryPanel";
 import { Variation } from "@/components/ContentCard";
 import ScriptVariationView from "@/components/ScriptVariationView";
+
+const ScriptTranscriptionTab = dynamic(
+  () => import("@/components/ScriptTranscriptionTab"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="glass-card rounded-[var(--radius)] p-8 flex items-center justify-center gap-3 text-[var(--text-secondary)]">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        Carregando transcricao...
+      </div>
+    ),
+  }
+);
 
 const objectives = [
   { value: "Converter em Vendas", label: "Converter em Vendas", emoji: "🎯" },
@@ -108,11 +124,12 @@ export default function ScriptPage() {
   const [viewMode, setViewMode] = useState<"video" | "fragmented">("video");
   const [isMounted, setIsMounted] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
-  const [subTab, setSubTab] = useState<"create" | "history">("create");
+  const [subTab, setSubTab] = useState<"create" | "transcribe" | "history">("create");
   const [historyRefresh, setHistoryRefresh] = useState(0);
 
   useEffect(() => {
-    setIsMounted(true);
+    const raf = requestAnimationFrame(() => setIsMounted(true));
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   // ─── Step 1 Handlers ───────────────────────────────────────────────
@@ -255,6 +272,27 @@ export default function ScriptPage() {
       type: "success",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleTranscriptionAsBriefing = (text: string) => {
+    if (!text.trim()) return;
+    setTheme(text.trim());
+    setSubTab("create");
+    setToast({
+      message: "Transcricao preenchida como briefing. Clique em Gerar para criar os roteiros!",
+      type: "success",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleSendTranscriptToContentCreator = (text: string) => {
+    if (!text.trim()) return;
+    setPendingBrief(text.trim());
+    setToast({
+      message: "Transcricao enviada ao Calendario (Criador de Conteudo)!",
+      type: "success",
+    });
+    router.push("/calendar");
   };
 
   const handleSendToTimeline = (variation: Variation) => {
@@ -555,6 +593,17 @@ export default function ScriptPage() {
               Criar Roteiro
             </button>
             <button
+              onClick={() => setSubTab("transcribe")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+                subTab === "transcribe"
+                  ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
+                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+              }`}
+            >
+              <Mic className="w-4 h-4" />
+              Extrair de Video/Audio
+            </button>
+            <button
               onClick={() => setSubTab("history")}
               className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
                 subTab === "history"
@@ -807,6 +856,11 @@ export default function ScriptPage() {
             )}
           </div>
         </div>
+        ) : subTab === "transcribe" ? (
+          <ScriptTranscriptionTab
+            onUseAsBriefing={handleTranscriptionAsBriefing}
+            onSendToContentCreator={handleSendTranscriptToContentCreator}
+          />
         ) : (
           <ScriptHistoryPanel refreshToken={historyRefresh} onLoad={handleLoadProject} />
         )}
