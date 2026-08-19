@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Check, Target, Zap, Sparkles, Megaphone, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Check, Target, Zap, Sparkles, Megaphone, Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
 import { Variation } from "@/components/ContentCard";
 
 interface FragmentedViewProps {
@@ -103,9 +103,50 @@ function BlockSection({ title, emoji, items, accent, icon }: {
 
 export default function FragmentedView({ variations }: FragmentedViewProps) {
   const hooks = variations.map((v, i) => ({ text: v.hook, index: i }));
-  const dores = variations.map((v, i) => ({ text: v.dor, index: i }));
-  const desejos = variations.map((v, i) => ({ text: v.desejo, index: i }));
   const ctas = variations.map((v, i) => ({ text: v.cta, index: i }));
+
+  // Modo 3 blocos (Gancho / Desenvolvimento / CTA) — estrutura moderna.
+  if (variations.some((v) => !!v.development)) {
+    const developments = variations.map((v, i) => ({
+      text: v.development || "",
+      index: i,
+    }));
+    return (
+      <div className="space-y-4 animate-fade-in">
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <div className="w-2 h-2 rounded-full bg-[var(--accent-orange)] animate-pulse" />
+          <p className="text-xs text-[var(--text-secondary)]">
+            Modo fragmentado: grave os 3 blocos de cada tipo de uma vez para acelerar a producao
+          </p>
+        </div>
+        <BlockSection
+          title="Todos os GANCHOS / HOOKS"
+          emoji="🎯"
+          items={hooks}
+          accent="#ec4899"
+          icon={Target}
+        />
+        <BlockSection
+          title="Todos os DESENVOLVIMENTOS (Dor + Solução)"
+          emoji="💡"
+          items={developments}
+          accent="#8b5cf6"
+          icon={Lightbulb}
+        />
+        <BlockSection
+          title="Todas as CTAs (Chamadas para Ação)"
+          emoji="📢"
+          items={ctas}
+          accent="#10b981"
+          icon={Megaphone}
+        />
+      </div>
+    );
+  }
+
+  // Fallback para conteúdo legado (4 blocos: Hook / Dor / Desejo / CTA).
+  const dores = variations.map((v, i) => ({ text: v.dor || "", index: i }));
+  const desejos = variations.map((v, i) => ({ text: v.desejo || "", index: i }));
 
   return (
     <div className="space-y-4 animate-fade-in">

@@ -13,12 +13,15 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  Loader2,
+  Lightbulb,
 } from "lucide-react";
 
 export interface Variation {
   hook: string;
-  dor: string;
-  desejo: string;
+  dor?: string;
+  desejo?: string;
+  development?: string;
   cta: string;
   headline: string;
   caption: string;
@@ -26,12 +29,16 @@ export interface Variation {
   scene_direction: string;
   brolls: string[];
   objective_foco?: string;
+  angleName?: string;
 }
 
 interface ContentCardProps {
   index: number;
   variation: Variation;
   theme: string;
+  isPolishing?: boolean;
+  onSendToTimeline?: (variation: Variation, index: number) => void;
+  onPolish?: (variation: Variation, index: number) => void;
 }
 
 function CopyBox({ label, text, icon: Icon, accent }: { label: string; text: string; icon: React.ElementType; accent?: string }) {
@@ -72,10 +79,24 @@ function CopyBox({ label, text, icon: Icon, accent }: { label: string; text: str
   );
 }
 
-export default function ContentCard({ index, variation, theme }: ContentCardProps) {
+export default function ContentCard({
+  index,
+  variation,
+  theme,
+  isPolishing,
+  onSendToTimeline,
+  onPolish,
+}: ContentCardProps) {
   const [expanded, setExpanded] = useState(index === 0);
+  const [copiedScript, setCopiedScript] = useState(false);
 
   const fullCaption = variation.caption + "\n\n" + (variation.hashtags || []).map((t) => "#" + t).join(" ");
+
+  const handleCopyScript = () => {
+    navigator.clipboard.writeText(fullCaption);
+    setCopiedScript(true);
+    setTimeout(() => setCopiedScript(false), 2000);
+  };
 
   const pexelsUrl = "https://www.pexels.com/search/" + encodeURIComponent(theme);
   const pixabayUrl = "https://pixabay.com/videos/search/" + encodeURIComponent(theme);
@@ -124,14 +145,89 @@ export default function ContentCard({ index, variation, theme }: ContentCardProp
         </div>
       </button>
 
+      {/* Action Bar */}
+      {(variation.angleName || onSendToTimeline || onPolish) && (
+        <div className="flex items-center gap-2 px-4 py-2.5 border-t border-[var(--border-subtle)] flex-wrap bg-[var(--surface)]/40">
+          {variation.angleName && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--primary)]/10 border border-[var(--primary)]/20 text-[var(--primary)] text-[10px] font-semibold">
+              <Zap className="w-3 h-3" />
+              {variation.angleName}
+            </span>
+          )}
+          <div className="flex-1 min-w-[8px]" />
+          {onSendToTimeline && (
+            <button
+              onClick={() => onSendToTimeline(variation, index)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-[var(--accent-cyan)]/10 border border-[var(--accent-cyan)]/20 text-[var(--accent-cyan)] text-[11px] font-semibold hover:bg-[var(--accent-cyan)]/20 transition-colors"
+              title="Injetar falas e b-rolls na timeline do editor"
+            >
+              <Clapperboard className="w-3.5 h-3.5" />
+              Enviar ao Editor
+            </button>
+          )}
+          <button
+            onClick={handleCopyScript}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] text-[11px] font-semibold hover:text-white hover:border-[var(--border)] transition-colors"
+            title="Copiar roteiro completo com hashtags"
+          >
+            {copiedScript ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-[var(--accent-green)]" />
+                <span className="text-[var(--accent-green)]">Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                Copiar Roteiro
+              </>
+            )}
+          </button>
+          {onPolish && (
+            <button
+              onClick={() => onPolish(variation, index)}
+              disabled={isPolishing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-gradient-to-r from-[var(--primary)] to-[var(--accent-pink)] text-white text-[11px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+              title="Refinar apenas esta variacao com IA"
+            >
+              {isPolishing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Polindo...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Polir com IA
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Content */}
       {expanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-[var(--border-subtle)]">
-          {/* 4-Block Copy */}
+          {/* 3-Block Copy: Gancho / Desenvolvimento (Dor+Solução) / CTA */}
           <div className="pt-3 space-y-2">
-            <CopyBox label="Hook (Gancho)" text={variation.hook} icon={Target} accent="#ec4899" />
-            <CopyBox label="Dor (Problema)" text={variation.dor} icon={Zap} accent="#f59e0b" />
-            <CopyBox label="Desejo (Solucao)" text={variation.desejo} icon={Sparkles} accent="#8b5cf6" />
+            <CopyBox label="Gancho (Hook)" text={variation.hook} icon={Target} accent="#ec4899" />
+            {variation.development ? (
+              <CopyBox
+                label="Desenvolvimento (Dor + Solução)"
+                text={variation.development}
+                icon={Lightbulb}
+                accent="#8b5cf6"
+              />
+            ) : (
+              <>
+                {variation.dor && (
+                  <CopyBox label="Dor (Problema)" text={variation.dor} icon={Zap} accent="#f59e0b" />
+                )}
+                {variation.desejo && (
+                  <CopyBox label="Desejo (Solucao)" text={variation.desejo} icon={Sparkles} accent="#8b5cf6" />
+                )}
+              </>
+            )}
             <CopyBox label="CTA (Chamada)" text={variation.cta} icon={Megaphone} accent="#10b981" />
           </div>
 

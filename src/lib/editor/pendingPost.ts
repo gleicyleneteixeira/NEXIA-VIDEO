@@ -13,6 +13,7 @@ export interface PendingPostImport {
   dayNumber: number;
   pillarLabel: string;
   format: string;
+  scriptTexts?: string[];
 }
 
 let pending: PendingPostImport | null = null;

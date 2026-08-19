@@ -10,7 +10,6 @@ import {
   Share2,
   Settings,
   Zap,
-  Clock,
   FileStack,
   Paintbrush,
   CalendarDays,
@@ -20,12 +19,11 @@ import {
 const menuItems = [
   { icon: Home, label: "Dashboard", href: "/dashboard" },
   { icon: Sparkles, label: "Roteiro & IA", href: "/script" },
-  { icon: CalendarDays, label: "Calendario", href: "/calendar" },
   { icon: Factory, label: "Criacao em Massa", href: "/mass-production" },
-  { icon: Store, label: "Fabrica de Posts", href: "/studio" },
   { icon: Scissors, label: "Editor", href: "/editor" },
+  { icon: Store, label: "Fabrica de Posts", href: "/studio" },
+  { icon: CalendarDays, label: "Calendario", href: "/calendar" },
   { icon: Share2, label: "Publicacao", href: "/publish" },
-  { icon: Clock, label: "Historico", href: "/history" },
   { icon: FileStack, label: "Juntar PDF", href: "/pdf-merge" },
   { icon: Paintbrush, label: "SpeedPaint", href: "/speed-paint" },
 ];

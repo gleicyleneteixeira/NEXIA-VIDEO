@@ -16,93 +16,44 @@ Você DEVE gerar exatamente ${quantity} objetos (variações de roteiro) diferen
 O video deve ter EXATAMENTE ${durationConfig.label}.
 Nivel de detalhe: ${durationConfig.hint}
 Limite de palavras por video: ~${durationConfig.words} palavras (baseado em ~140 palavras por minuto).
-Cada bloco (hook, dor, desejo, cta) DEVE respeitar essa metrica. Seja conciso ou elaborado conforme a duracao.
+Cada bloco (hook, development, cta) DEVE respeitar essa metrica. Seja conciso ou elaborado conforme a duracao.
 NAO ultrapasse o limite de palavras. Releia e ajuste antes de responder.`
     : "";
 
-  const base = `Voce e um roteirista profissional de videos para redes sociais (YouTube Shorts, TikTok, Instagram Reels).
-Sempre responda APENAS com um JSON array valido, sem markdown, sem texto antes ou depois.
+  const base = `Voce e o copywriter senior do SaaS NEXIA VIDEO, especialista em videos virais e conversao para Reels, TikTok e Shorts.
+
+Sua tarefa: ler o briefing ou ideia livre do usuario (nao importa o nicho) e criar roteiros COMPLETOS, 100% coerentes, com excelente portugues falado (tom de conversa natural de live/Stories).
+
+REGRAS DE OURO:
+1. ENTENDIMENTO REAL: Extraia o contexto profundo do briefing do usuario. Se ele citar contrastes, dores reais, produtos ou ofertas especificas, use esses elementos DENTRO do roteiro. NUNCA ignore o briefing e nunca substitua por temas genericos.
+2. ESTRUTURA EM 3 ATOS POR ROTEIRO:
+   - HOOK (Gancho): 1 unica pergunta impactante, quebra de mito ou choque nos primeiros 3 segundos. Varie as aberturas entre os videos.
+   - DESENVOLVIMENTO: Dor + Solucao conectadas em um UNICO paragrafo fluido e facil de falar em voz alta.
+   - CTA: Chamada direta com gatilho de oferta relampago, escassez ou comando para link da bio/comentarios.
+3. CONCORDANCIA PERFEITA: Portugues falado correto, com genero, numero e tempos verbais consistentes. NENHUMA frase quebrada.
+4. SAIDA ESTRITA: Retorne APENAS um array JSON valido, sem markdown.
 
 Cada elemento do array representa 1 video e deve ter exatamente esta estrutura:
 [
   {
-    "hook": "Frase impactante de 3 segundos para prender atencao",
-    "dor": "Frase focada no problema/desafio do publico",
-    "desejo": "Apresentacao da solucao/beneficio",
-    "cta": "Comando final para o publico agir",
-    "headline": "Texto curto para headline/capa do video (max 10 palavras)",
-    "caption": "Legenda para Instagram/TikTok com tom adequado",
-    "hashtags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-    "scene_direction": "Instrucao de como gravar: posicao, energia, gestos, olhar para camera",
-    "brolls": ["Sugestao 1 de corte de apoio", "Sugestao 2 de corte de apoio", "Sugestao 3 de corte de apoio"]${hasMultipleObjectives ? `,
+    "angleName": "Nome do angulo psicologico deste roteiro",
+    "headline": "Titulo chamativo (max 10 palavras)",
+    "hook": "Gancho fluido e natural",
+    "development": "Desenvolvimento completo conectando dor e solucao em um unico paragrafo",
+    "cta": "Chamada para acao",
+    "scene_direction": "Direcao de cena para gravacao: posicao, energia, gestos, olhar para camera",
+    "brolls": ["Sugestao 1 de corte de apoio", "Sugestao 2", "Sugestao 3"],
+    "hashtags": ["tag1", "tag2", "tag3", "tag4", "tag5"]${hasMultipleObjectives ? `,
     "objective_foco": "Nome do objetivo foco deste video especifico"` : ""}
   }
-]
-
-═══════════════════════════════════════════════════════════════════
-REGRAS DE MODULARIDADE RIGOROSA (OBRIGATORIO SEGUIR)
-═══════════════════════════════════════════════════════════════════
-
-O sistema de geracao combina os blocos via FFmpeg: Hooks x Dores x Desejos x CTAs.
-Cada bloco de UM video pode ser combinado com QUALQUER bloco de OUTRO video.
-Portanto, os blocos NAO podem ser historias fechadas. Devem ser MODULOS UNIVERSAIS INTERCAMBIAVEIS.
-
-─── 1. HOOKS (Ganchos de 3s) ────────────────────────────────────
-- Devem ser interrupcoes de padrao diretas sobre o tema geral.
-- Proibido: fazer perguntas que exijam resposta imediata no proprio Hook.
-- Proibido: citar dados ultra-especificos no Hook que dependam de uma continuacao exata na Dor.
-- O Hook deve terminar em um tom SUSPENSO que se conecte semanticamente com QUALQUER Dor gerada.
-- Use frases como: "Se voce vai fazer X, pare tudo agora!", "O maior erro de quem Y e este aqui!", "Ninguem te conta isso sobre X..."
-
-─── 2. DORES (O Problema) ───────────────────────────────────────
-- Devem abordar o sentimento/obstaculo COMUM sem pressupor a frase exata do Hook.
-- A frase DEVE fluir perfeitamente vindo de QUALQUER um dos Hooks gerados.
-- Proibido: usar conectivos que dependam do texto anterior (como "Por isso...", "E e que...").
-- Comece a frase como se fosse o inicio de um pensamento autonomo.
-
-─── 3. DESEJOS (A Solucao) ──────────────────────────────────────
-- Apresentam o beneficio principal da oferta de forma INDEPENDENTE.
-- Proibido: referenciar a Dor por palavras (como "A solucao para isso...", "Para resolver...").
-- Descreva o beneficio como um fato autonomo: "Com [Produto], voce [beneficio direto]."
-- O Desejo deve funcionar sozinho, sem necessidade de contexto anterior.
-
-─── 4. CTAs (Chamadas para Acao) ────────────────────────────────
-- Devem ser comandos DIRETOS e UNIVERSAIS para o objetivo selecionado.
-- Proibido: criar CTAs que dependam do contexto da Dor ou Desejo anterior.
-- Use verbos de acao fortes: "Clique no link...", "Garanta agora...", "Siga para mais..."
-- O CTA deve funcionar vindo de QUALQUER Desejo anterior.
-
-═══════════════════════════════════════════════════════════════════
-TESTE DE COERENCIA GRAMATICAL E CONTEXTUAL (AUTO-VALIDACAO)
-═══════════════════════════════════════════════════════════════════
-
-ANTES de retornar o JSON, voce DEVE realizar o seguinte teste mental:
-1. Pegue o Hook do video 1, a Dor do video 2, o Desejo do video 3 e o CTA do video 4.
-2. Leia em voz alta como se fossem um unico texto continuo.
-3. Se sobrar pontas soltas, descontinuidade de tempo verbal ou falta de nexo, REESCREVA os blocos.
-4. Repita o teste com outras combinacoes ate garantir 100% de fluidez em QUALQUER permutacao.
-5. Cada bloco DEVE soar natural vindo de qualquer outro bloco, como se tivesse sido escrito juntos.
-
-═══════════════════════════════════════════════════════════════════
-MODO DE GRAVACAO FRAGMENTADA (EM LOTE)
-═══════════════════════════════════════════════════════════════════
-
-O usuario ira gravar os blocos SEPARADAMENTE em lote (todos os Hooks de uma vez, todas as Dores de uma vez, etc.) e depois o FFmpeg ira combinar QUALQUER Hook com QUALQUER Dor, QUALQUER Desejo e QUALQUER CTA.
-Isso significa que:
-- O Hook 1 deve funcionar PERFEITAMENTE com a Dor 3, o Desejo 5 e o CTA 2.
-- O Hook 3 deve funcionar PERFEITAMENTE com a Dor 1, o Desejo 2 e o CTA 4.
-- NAO pode haver NENHUMA referencia cruzada entre blocos do mesmo video original.
-- Cada bloco e uma UNIDADE 100% AUTONOMA e INDEPENDENTE.
-- Se qualquer combinacao gerar frase sem nexo, o bloco esta ERRADO e deve ser reescrito.`;
+]`;
 
   const objectiveRule = hasMultipleObjectives
     ? `\n\nREGRAS IMPORTANTES PARA OBJETIVOS MULTIPLOS:
 O usuario selecionou VARIOS objetivos para distribuir entre os videos.
 - Alterne e distribua os objetivos entre os videos gerados.
-- Cada video do array DEVE ter o campo "objective_foco" indicando qual objetivo daquele video.
-- A estrutura do copy (Hook, Dor, Desejo, CTA) DEVE se adaptar estritamente ao objetivo daquele video especifico.
-- Exemplo: se o objetivo e "Converter em Vendas", o CTA deve ser mais direto e voltado para conversao. Se e "Viralizar", o hook deve ser mais impactante e provocativo.
-- Nao repita o mesmo objetivo em videos consecutivos se houver variedade suficiente.`
+- Cada video do array DEVE ter o campo "objective_foco".
+- O copy (hook, development, cta) DEVE se adaptar ao objetivo daquele video.`
     : `\n\nIMPORTANTE: O campo "objective_foco" NAO deve ser incluido no JSON quando apenas um unico objetivo for fornecido.`;
 
   return base + quantityRule + durationRule + objectiveRule + `\n\nImportante: Retorne EXATAMENTE um array JSON. Nao inclua nenhum texto fora do array.`;
@@ -166,7 +117,7 @@ export async function POST(request: NextRequest) {
       ? "\n\nContexto adicional:\n" + contextParts.join("\n")
       : "";
 
-    const userPrompt = "Tema do video: " + theme + contextStr + "\n\nGere " + (quantity || 3) + " variacoes de roteiro para video. Retorne APENAS o JSON array.";
+    const userPrompt = "Briefing / Ideia do usuario (use TODO o texto, sem resumir):\n\n" + theme + contextStr + "\n\nGere " + (quantity || 3) + " roteiros COMPLETOS. Retorne APENAS o JSON array.";
 
     const selectedModel = model && model !== "google/gemma-4-26b-a4b-it:free" ? model : "google/gemini-2.5-flash:free";
     const systemPrompt = buildSystemPrompt(hasMultipleObjectives, durationConfig, quantity || 3);

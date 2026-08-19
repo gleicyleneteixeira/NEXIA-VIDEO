@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Sparkles,
-  Wand2,
   Lightbulb,
   ChevronRight,
   User,
@@ -19,12 +19,19 @@ import {
   Puzzle,
   AlertTriangle,
   CheckCircle,
+  Zap,
+  History,
 } from "lucide-react";
 import { useOpenRouterModel } from "@/hooks/useOpenRouterModel";
 import { useBusinessProfiles } from "@/hooks/useBusinessProfiles";
-import { useGeneratedScripts } from "@/hooks/useGeneratedScripts";
-import ContentCard, { Variation } from "@/components/ContentCard";
-import FragmentedView from "@/components/FragmentedView";
+import { setPendingPostImport } from "@/lib/editor/pendingPost";
+import { refineSingleVariationWithAi } from "@/services/scriptAiRefiner";
+import { generateScriptsWithRealAI } from "@/services/aiScriptService";
+import { ScriptHistoryService, variationToSaved, savedVariationToVariation } from "@/services/scriptHistoryService";
+import type { SavedScriptProject } from "@/services/scriptHistoryService";
+import ScriptHistoryPanel from "@/components/ScriptHistoryPanel";
+import { Variation } from "@/components/ContentCard";
+import ScriptVariationView from "@/components/ScriptVariationView";
 
 const objectives = [
   { value: "Converter em Vendas", label: "Converter em Vendas", emoji: "🎯" },
@@ -66,6 +73,7 @@ function Toast({ message, type, onClose }: { message: string; type: "success" | 
 }
 
 export default function ScriptPage() {
+  const router = useRouter();
   const { selectedModel, apiKey, apiKeys } = useOpenRouterModel();
   const {
     profiles,
@@ -77,8 +85,6 @@ export default function ScriptPage() {
     deleteProfile,
     clearSelection,
   } = useBusinessProfiles();
-  const { scripts, activeGeneration, startGeneration, cancelGeneration } = useGeneratedScripts();
-  const generatingIdRef = useRef<string | null>(null);
 
   // Step control
   const [step, setStep] = useState<"profile" | "generate">(selectedId ? "generate" : "profile");
@@ -102,42 +108,12 @@ export default function ScriptPage() {
   const [viewMode, setViewMode] = useState<"video" | "fragmented">("video");
   const [isMounted, setIsMounted] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const [subTab, setSubTab] = useState<"create" | "history">("create");
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
-
-  // Recovery & active generation completed listener
-  useEffect(() => {
-    if (scripts.length > 0) {
-      // 1. Check if the script we were generating is now completed
-      if (generatingIdRef.current) {
-        const generated = scripts.find((s) => s.id === generatingIdRef.current);
-        if (generated) {
-          if (generated.status === "completed") {
-            setVariations(generated.cards_data as Variation[]);
-            setTheme(generated.tema);
-            setToast({ message: "Geracao concluida! Seus roteiros estao prontos.", type: "success" });
-            setIsGenerating(false);
-            generatingIdRef.current = null;
-          } else if (generated.status === "error") {
-            setError(generated.error_message || "Erro desconhecido na geracao.");
-            setIsGenerating(false);
-            generatingIdRef.current = null;
-          }
-        }
-      }
-
-      // 2. Recovery: if variations are empty, show the most recent completed one
-      if (variations.length === 0 && !generatingIdRef.current) {
-        const latestCompleted = scripts.find((s) => s.status === "completed" && s.cards_data);
-        if (latestCompleted && latestCompleted.cards_data) {
-          setVariations(latestCompleted.cards_data as Variation[]);
-          setTheme(latestCompleted.tema);
-        }
-      }
-    }
-  }, [scripts, variations.length]);
 
   // ─── Step 1 Handlers ───────────────────────────────────────────────
 
@@ -212,12 +188,98 @@ export default function ScriptPage() {
     );
   };
 
-  const handleGenerate = async () => {
+  const getCleanObjectives = () => {
+    const hasCustom = selectedObjectives.includes("Outros");
+    const cleanObjectives = selectedObjectives.filter((v) => v !== "Outros");
+    if (hasCustom && customObjective.trim()) {
+      cleanObjectives.push(customObjective.trim());
+    }
+    return cleanObjectives;
+  };
+
+  const handlePolish = async (variation: Variation, index: number) => {
+    if (!apiKey && apiKeys.length === 0) {
+      setToast({
+        message: "Configure sua API Key do OpenRouter em Configuracoes > Modelos de IA para refinar.",
+        type: "error",
+      });
+      return;
+    }
+    try {
+      const development =
+        variation.development ||
+        [variation.dor, variation.desejo].filter(Boolean).join("\n\n");
+
+      const refined = await refineSingleVariationWithAi(
+        {
+          headline: variation.headline,
+          hook: variation.hook,
+          development,
+          cta: variation.cta,
+        },
+        { model: selectedModel, apiKey, apiKeys }
+      );
+
+      setVariations((prev) => {
+        const next = [...prev];
+        const current = next[index];
+        if (!current) return prev;
+        const hook = refined.hook ?? current.hook;
+        const dev = refined.development ?? current.development ?? development;
+        const cta = refined.cta ?? current.cta;
+        next[index] = {
+          ...current,
+          headline: refined.headline ?? current.headline,
+          hook,
+          development: dev,
+          cta,
+          caption: `${hook}\n\n${dev}\n\n👉 ${cta}`,
+        };
+        return next;
+      });
+      setToast({ message: "Variacao refinada com IA!", type: "success" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Falha ao refinar com IA.";
+      setToast({ message: msg, type: "error" });
+    }
+  };
+
+  const handleLoadProject = (project: SavedScriptProject) => {
+    if (!project || project.variations.length === 0) return;
+    setTheme(project.topic);
+    setVariations(project.variations.map((v) => savedVariationToVariation(v)));
+    setViewMode("video");
+    setSubTab("create");
+    setToast({
+      message: `${project.variations.length} roteiros carregados na tela!`,
+      type: "success",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleSendToTimeline = (variation: Variation) => {
+    setPendingPostImport({
+      imageDataUrl: "",
+      hook: variation.hook,
+      dayNumber: 0,
+      pillarLabel: "Roteiro",
+      format: "script",
+      scriptTexts: [
+        variation.hook,
+        variation.development ||
+          [variation.dor, variation.desejo].filter(Boolean).join("\n\n"),
+        variation.cta,
+      ].filter(Boolean),
+    });
+    router.push("/editor");
+  };
+
+  const handleGenerateWithAI = async () => {
     if (!theme.trim()) {
       alert("Preencha o Tema/Ideia Central do video!");
       return;
     }
-    if (!apiKey) {
+    if (apiKey.trim() === "" && apiKeys.length === 0) {
       alert("Configure sua API Key do OpenRouter em Configuracoes > Modelos de IA!");
       return;
     }
@@ -226,60 +288,60 @@ export default function ScriptPage() {
       return;
     }
 
-    const hasCustom = selectedObjectives.includes("Outros");
-    const cleanObjectives = selectedObjectives.filter((v) => v !== "Outros");
-    if (hasCustom && customObjective.trim()) {
-      cleanObjectives.push(customObjective.trim());
-    }
+    const cleanObjectives = getCleanObjectives();
+    const count = Math.max(1, Math.min(20, quantity));
 
     setIsGenerating(true);
     setError(null);
-    setVariations([]);
 
-    console.log("🚀 Iniciando chamada à IA...");
+    console.log("🚀 Enviando briefing integral para a IA...");
 
     try {
-      const record = await startGeneration(
-        theme,
+      const aiVariations = await generateScriptsWithRealAI({
+        topic: theme,
+        niche: selectedProfile.nicho || "",
+        count,
         duracao,
-        cleanObjectives,
-        quantity,
-        selectedId,
-        {
-          theme,
-          quantity,
-          duracao,
-          objectives: cleanObjectives,
-          nicho: selectedProfile.nicho,
-          publicoAlvo: selectedProfile.publico,
-          produtoServico: selectedProfile.produto,
-          model: selectedModel,
-          apiKey,
-          apiKeys: apiKeys.length > 0 ? apiKeys : (apiKey ? [apiKey] : []),
-        }
-      );
+        objectives: cleanObjectives,
+        publicoAlvo: selectedProfile.publico || "",
+        produtoServico: selectedProfile.produto || "",
+        model: selectedModel,
+        apiKey,
+        apiKeys: apiKeys.length > 0 ? apiKeys : apiKey ? [apiKey] : [],
+      });
 
-      console.log("✅ Resposta recebida:", record?.id);
-
-      if (record) {
-        generatingIdRef.current = record.id;
-        setToast({
-          message: "Sua geracao foi iniciada! Voce pode continuar usando o sistema normalmente enquanto processamos.",
-          type: "info"
-        });
-      } else {
-        throw new Error("Registro nao foi criado. Verifique sua conexao e tente novamente.");
+      if (!aiVariations || aiVariations.length === 0) {
+        throw new Error("A IA nao retornou roteiros validos.");
       }
+
+      const nextVariations = aiVariations as Variation[];
+      setVariations(nextVariations);
+      setViewMode("video");
+      setToast({
+        message: `${nextVariations.length} roteiros completos gerados com IA!`,
+        type: "success",
+      });
+
+      void (async () => {
+        try {
+          await ScriptHistoryService.saveProject({
+            topic: theme,
+            niche: (selectedProfile && selectedProfile.nicho) || "",
+            variationsCount: nextVariations.length,
+            variations: nextVariations.map((v, i) =>
+              variationToSaved({ ...v }, i)
+            ),
+          });
+          setHistoryRefresh((n) => n + 1);
+        } catch (e) {
+          console.error("Falha ao salvar no historico local:", e);
+        }
+      })();
     } catch (error: unknown) {
-      console.error("❌ Erro na geração:", error);
-      const msg =
-        error instanceof Error
-          ? error.name === "AbortError"
-            ? "A IA demorou muito para responder. Tente novamente."
-            : error.message
-          : "Erro ao gerar conteudo. Verifique sua chave de API.";
-      setError(msg);
-      setToast({ message: msg, type: "error" });
+      console.error("Erro na geração via IA:", error);
+      const message = error instanceof Error ? error.message : "Erro ao gerar conteudo com IA.";
+      setError(message);
+      setToast({ message, type: "error" });
     } finally {
       setIsGenerating(false); // NUNCA FICA TRAVADO
     }
@@ -295,6 +357,8 @@ export default function ScriptPage() {
       </div>
     );
   }
+
+  const hasAi = !!apiKey || apiKeys.length > 0;
 
   return (
     <div className="max-w-7xl mx-auto stagger">
@@ -317,22 +381,6 @@ export default function ScriptPage() {
           Multi-variacoes de roteiro com IA
         </p>
       </div>
-
-      {/* Active Generation Banner */}
-      {activeGeneration && (
-        <div className="mb-6 p-4 rounded-[var(--radius)] bg-[var(--primary)]/10 border border-[var(--primary)]/25 flex items-center gap-4 animate-fade-in">
-          <Loader2 className="w-5 h-5 text-[var(--primary)] animate-spin shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-[var(--primary)]">Geracao em andamento...</p>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              "{activeGeneration.tema}" — Voce pode navegar livremente. Os roteiros aparecerao aqui quando prontos.
-            </p>
-          </div>
-          <div className="text-xs text-[var(--text-secondary)] shrink-0">
-            {new Date(activeGeneration.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-          </div>
-        </div>
-      )}
 
       {/* Step Indicator */}
       <div className="flex items-center gap-3 mb-8">
@@ -492,7 +540,35 @@ export default function ScriptPage() {
           STEP 2 — Content Configuration & Generation
       ═══════════════════════════════════════════════════════════════ */}
       {step === "generate" && (
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="space-y-4">
+          {/* Sub-tabs: Criar Roteiro / Histórico de Roteiros */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSubTab("create")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+                subTab === "create"
+                  ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
+                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              Criar Roteiro
+            </button>
+            <button
+              onClick={() => setSubTab("history")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+                subTab === "history"
+                  ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
+                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+              }`}
+            >
+              <History className="w-4 h-4" />
+              Historico de Roteiros
+            </button>
+          </div>
+
+          {subTab === "create" ? (
+            <div className="grid lg:grid-cols-3 gap-6">
           {/* Left — Controls */}
           <div className="lg:col-span-1 space-y-4">
             {/* Active Profile Banner */}
@@ -529,6 +605,15 @@ export default function ScriptPage() {
                 placeholder="Ex: 3 erros que destroem seu trafego pago..."
                 className="input-field w-full h-28 px-4 py-3 rounded-[12px] resize-none"
               />
+              <div className="mt-2 p-2.5 rounded-[8px] bg-purple-950/30 border border-purple-800/40 text-[11px] text-purple-200/80 flex items-start gap-2">
+                <span className="text-sm shrink-0">💡</span>
+                <div>
+                  <strong className="text-purple-300">Dica de Criacao:</strong>
+                  <p className="mt-1 leading-relaxed">
+                    <span className="text-zinc-300">• <strong>Com IA:</strong> pode colar textos longos, comentarios ou desabafos completos. Quanto mais contexto, mais coerente fica o roteiro.</span>
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Settings */}
@@ -617,32 +702,29 @@ export default function ScriptPage() {
               </div>
             </div>
 
-            {/* Generate Button */}
+            {/* Generate — 100% IA, geração sempre via API (sem templates locais) */}
             <button
-              onClick={handleGenerate}
-              disabled={isGenerating || !theme.trim() || !!activeGeneration}
-              className="btn-primary w-full py-3.5 rounded-[14px] text-[15px] font-bold disabled:opacity-50"
+              onClick={handleGenerateWithAI}
+              disabled={isGenerating || !theme.trim()}
+              className="w-full py-3 px-4 rounded-[14px] font-semibold text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
             >
-              {isGenerating || activeGeneration ? (
+              {isGenerating ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {activeGeneration ? "Geracao em andamento..." : "Iniciando..."}
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Iniciando...</span>
                 </>
               ) : (
                 <>
-                  <Wand2 className="w-5 h-5" />
-                  Gerar {quantity} Variacoes
+                  <span>🤖</span>
+                  <span>Gerar {quantity} Variacoes com IA</span>
                 </>
               )}
             </button>
-            {activeGeneration && (
-              <button
-                onClick={cancelGeneration}
-                className="w-full mt-2 py-2.5 rounded-[12px] text-sm font-medium text-[var(--danger)] border border-[var(--danger)]/30 hover:bg-[var(--danger)]/10 transition-colors"
-              >
-                Cancelar Geracao
-              </button>
-            )}
+            <p className="text-[11px] text-[var(--text-secondary)] mt-2 text-center leading-relaxed">
+              {hasAi
+                ? `Gerado pela IA (${selectedModel || "google/gemini-2.5-flash:free"}) a partir do seu briefing completo, em 3 atos coerentes.`
+                : "Este botao precisa de uma API Key. Configure em Configuracoes > Modelos de IA."}
+            </p>
           </div>
 
           {/* Right — Results */}
@@ -653,7 +735,7 @@ export default function ScriptPage() {
               </div>
             )}
 
-            {isGenerating && !activeGeneration && (
+            {isGenerating && (
               <div className="flex flex-col items-center justify-center py-20">
                 <div className="relative mb-6">
                   <Loader2 className="w-12 h-12 animate-spin text-[var(--primary)]" />
@@ -664,7 +746,7 @@ export default function ScriptPage() {
               </div>
             )}
 
-            {!isGenerating && !activeGeneration && variations.length === 0 && !error && (
+            {!isGenerating && variations.length === 0 && !error && (
               <div className="flex flex-col items-center justify-center py-20 text-[var(--text-secondary)]">
                 <div className="w-20 h-20 rounded-[20px] bg-[var(--primary)]/5 flex items-center justify-center mb-4">
                   <Sparkles className="w-10 h-10 opacity-20" />
@@ -704,26 +786,30 @@ export default function ScriptPage() {
                       </button>
                     </div>
                     <button
-                      onClick={handleGenerate}
-                      disabled={isGenerating || !!activeGeneration}
+                      onClick={handleGenerateWithAI}
+                      disabled={isGenerating}
                       className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-white transition-colors group"
                     >
-                      <Wand2 className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                      <Zap className="w-4 h-4 group-hover:rotate-12 transition-transform" />
                       Regenerar
                     </button>
                   </div>
                 </div>
 
-                {viewMode === "video" ? (
-                  variations.map((v, i) => (
-                    <ContentCard key={i} index={i} variation={v} theme={theme} />
-                  ))
-                ) : (
-                  <FragmentedView variations={variations} />
-                )}
+                <ScriptVariationView
+                  variations={variations}
+                  theme={theme}
+                  viewMode={viewMode}
+                  onSendToTimeline={handleSendToTimeline}
+                  onPolish={handlePolish}
+                />
               </div>
             )}
           </div>
+        </div>
+        ) : (
+          <ScriptHistoryPanel refreshToken={historyRefresh} onLoad={handleLoadProject} />
+        )}
         </div>
       )}
     </div>

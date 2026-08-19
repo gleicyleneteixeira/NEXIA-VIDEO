@@ -7,7 +7,6 @@ import {
   Trash2,
   Download,
   Sparkles,
-  Check,
   RefreshCw,
   X,
   Film,
@@ -40,8 +39,24 @@ import {
 } from "@/lib/videoEngine";
 import { saveVideoToDB } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import { getObjectUrl, recoverFromDeadUrl } from "@/utils/mediaBlobManager";
+import {
+  GalleryStorageService,
+  galleryRemainingLabel,
+} from "@/services/mediaStorageService";
+import { captureVideoThumbnail } from "@/utils/videoThumbnail";
+import { buildZip, downloadBlob } from "@/utils/zip";
+import { fisherYatesShuffle } from "@/utils/shuffle";
+import { deduplicateById } from "@/utils/videoDedup";
+import {
+  sendToEditor as sendVariationToEditor,
+  sendBatchToEditor,
+} from "@/services/bulkToEditorService";
+import MediaIntegrityBadge from "@/components/media/MediaIntegrityBadge";
+import { MediaVault } from "@/services/persistentMediaVault";
 
-type TagType = "hook" | "dor" | "development" | "cta";
+type TagType = "hook" | "development" | "cta";
 type ResultsTab = "generated" | "media";
 type VideoFilter = "all" | "not_posted" | "posted";
 
@@ -58,6 +73,9 @@ interface UploadedVideo {
 interface RenderedVideo {
   id: number;
   supabaseId?: string;
+  galleryId?: string;
+  createdAt?: string;
+  thumbUrl?: string;
   variation: Variation;
   blobUrl: string | null;
   blob: Blob | null;
@@ -80,13 +98,51 @@ interface QueueStatus {
 }
 
 function VideoThumb({ file }: { file: File }) {
-  const [src, setSrc] = useState("");
-  useEffect(() => {
-    const url = URL.createObjectURL(file);
-    setSrc(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-  return <video src={src} className="w-16 h-10 rounded object-cover bg-black" />;
+  const [src, setSrc] = useState(() => getObjectUrl(file));
+  return (
+    <video
+      src={src}
+      className="w-16 h-10 rounded object-cover bg-black"
+      onError={() => setSrc(recoverFromDeadUrl(file, src))}
+    />
+  );
+}
+
+function GalleryVideoPlayer({ video, aspectClass }: { video: RenderedVideo; aspectClass: string }) {
+  const [url, setUrl] = useState(() =>
+    video.blob instanceof Blob ? getObjectUrl(video.blob) : video.blobUrl || ""
+  );
+
+  if (!url && video.thumbUrl) {
+    return (
+      <img
+        src={video.thumbUrl}
+        alt={video.variation.id}
+        className={`w-full ${aspectClass} rounded-lg bg-black object-cover`}
+      />
+    );
+  }
+
+  if (!url) {
+    return (
+      <div className={`w-full ${aspectClass} rounded-lg bg-black flex items-center justify-center`}>
+        <span className="text-xs text-gray-500">Midia indisponivel</span>
+      </div>
+    );
+  }
+
+  return (
+    <video
+      src={url}
+      controls
+      className={`w-full ${aspectClass} rounded-lg bg-black object-cover`}
+      onError={() => {
+        if (video.blob instanceof Blob) {
+          setUrl(recoverFromDeadUrl(video.blob, url));
+        }
+      }}
+    />
+  );
 }
 
 function UploadBox({
@@ -150,10 +206,11 @@ function UploadBox({
       onDragOver={(e) => { e.preventDefault(); if (!isAtLimit) setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
+      onClick={() => !isAtLimit && fileInputRef.current?.click()}
       className={`rounded-2xl border-2 border-dashed transition-all ${
         isDragOver ? `${borderColor} ${bgColor} scale-[1.02]`
-          : isAtLimit ? "border-gray-600 bg-[#1c1c28] opacity-75"
-          : "border-gray-700 bg-[#1c1c28] hover:border-gray-600"
+          : isAtLimit ? "border-gray-600 bg-[#1c1c28] opacity-75 cursor-not-allowed"
+          : "border-gray-700 bg-[#1c1c28] hover:border-gray-600 cursor-pointer"
       }`}
     >
       <div className={`p-4 border-b border-gray-800 ${isAtLimit ? "bg-gray-800/30" : bgColor}`}>
@@ -175,7 +232,7 @@ function UploadBox({
         {videos.length > 0 ? (
           <div className="space-y-2">
             {videos.map((video) => (
-              <div key={video.id} className="flex items-center gap-3 p-2 rounded-xl bg-[#252535] hover:bg-[#2a2a3a] transition-colors group">
+              <div key={video.id} onClick={(e) => e.stopPropagation()} className="flex items-center gap-3 p-2 rounded-xl bg-[#252535] hover:bg-[#2a2a3a] transition-colors group">
                 <button onClick={() => onPlay(video.file)} className="w-12 h-8 rounded-lg bg-gradient-to-br from-[var(--primary)]/30 to-[var(--accent-pink)]/30 flex items-center justify-center shrink-0 hover:from-[var(--primary)]/50 hover:to-[var(--accent-pink)]/50 transition-all">
                   <Play className="w-4 h-4 text-white" />
                 </button>
@@ -190,14 +247,14 @@ function UploadBox({
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-[160px] text-center">
+          <div className={`flex flex-col items-center justify-center h-[160px] text-center ${isAtLimit ? "opacity-70" : ""} pointer-events-none select-none`}>
             <div className={`w-12 h-12 rounded-xl ${bgColor} flex items-center justify-center mb-3`}>
               <Upload className={`w-6 h-6 ${textColor}`} />
             </div>
             <p className="text-sm text-gray-400 mb-2">Arraste videos aqui</p>
-            <button onClick={() => !isAtLimit && fileInputRef.current?.click()} className={`text-xs ${isAtLimit ? "text-gray-500 cursor-not-allowed" : `${textColor} hover:underline`}`}>
+            <p className={`text-xs ${isAtLimit ? "text-gray-500" : `${textColor} hover:underline`}`}>
               {isAtLimit ? "Limite atingido" : "ou clique para selecionar"}
-            </button>
+            </p>
           </div>
         )}
       </div>
@@ -209,7 +266,7 @@ function UploadBox({
             Limite de {limit} videos atingido
           </div>
         ) : (
-          <button onClick={() => !isAtLimit && fileInputRef.current?.click()} disabled={isAtLimit}
+          <button onClick={(e) => { e.stopPropagation(); if (!isAtLimit) fileInputRef.current?.click(); }} disabled={isAtLimit}
             className={`w-full py-2 rounded-xl border-2 border-dashed ${isAtLimit ? "border-gray-600 bg-gray-800/30 text-gray-500 cursor-not-allowed" : `${borderColor} ${bgColor} ${textColor} hover:opacity-80`} text-sm font-medium flex items-center justify-center gap-2 transition-all`}>
             <Plus className="w-4 h-4" />
             {isAtLimit ? "Limite Atingido" : "Adicionar Video"}
@@ -223,8 +280,8 @@ function UploadBox({
 }
 
 export default function MassProductionPage() {
+  const router = useRouter();
   const [hookVideos, setHookVideos] = useState<UploadedVideo[]>([]);
-  const [dorVideos, setDorVideos] = useState<UploadedVideo[]>([]);
   const [devVideos, setDevVideos] = useState<UploadedVideo[]>([]);
   const [ctaVideos, setCtaVideos] = useState<UploadedVideo[]>([]);
   const [renderedVideos, setRenderedVideos] = useState<RenderedVideo[]>([]);
@@ -233,6 +290,8 @@ export default function MassProductionPage() {
   const [renderMode, setRenderMode] = useState<RenderMode>("fast");
   const [videoFormat, setVideoFormat] = useState<VideoFormat>(VIDEO_FORMATS[0]);
   const [videoFilter, setVideoFilter] = useState<VideoFilter>("all");
+  const [confirmDelete, setConfirmDelete] = useState<number[] | null>(null);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [transition, setTransition] = useState<"none" | "fade" | "wipe">("none");
   const [transitionDuration, setTransitionDuration] = useState(0.5);
 
@@ -277,7 +336,6 @@ export default function MassProductionPage() {
   const handleUpload = async (category: TagType, files: FileList) => {
     const getCategoryCount = (cat: TagType) => {
       if (cat === "hook") return hookVideos.length;
-      if (cat === "dor") return dorVideos.length;
       if (cat === "development") return devVideos.length;
       return ctaVideos.length;
     };
@@ -294,7 +352,7 @@ export default function MassProductionPage() {
         const duration = await getVideoDuration(tempUrl);
         URL.revokeObjectURL(tempUrl);
 
-        const totalVideos = hookVideos.length + dorVideos.length + devVideos.length + ctaVideos.length;
+        const totalVideos = hookVideos.length + devVideos.length + ctaVideos.length;
         if (totalVideos === 0) {
           const detected = await detectVideoFormat(file);
           setVideoFormat(detected);
@@ -305,14 +363,12 @@ export default function MassProductionPage() {
     }
 
     if (category === "hook") setHookVideos((prev) => [...prev, ...newVideos]);
-    else if (category === "dor") setDorVideos((prev) => [...prev, ...newVideos]);
     else if (category === "development") setDevVideos((prev) => [...prev, ...newVideos]);
     else setCtaVideos((prev) => [...prev, ...newVideos]);
   };
 
   const handleRemove = (category: TagType, id: string) => {
     if (category === "hook") setHookVideos((prev) => prev.filter((v) => v.id !== id));
-    else if (category === "dor") setDorVideos((prev) => prev.filter((v) => v.id !== id));
     else if (category === "development") setDevVideos((prev) => prev.filter((v) => v.id !== id));
     else setCtaVideos((prev) => prev.filter((v) => v.id !== id));
   };
@@ -334,23 +390,47 @@ export default function MassProductionPage() {
           .select("*")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
-          .limit(50);
+          .limit(500);
 
         if (data && data.length > 0) {
-          const loaded: RenderedVideo[] = data.map((row, i) => ({
-            id: i + 1,
-            supabaseId: row.id,
-            variation: row.variation_data || { id: "", blocks: [], expectedDuration: 0 },
-            blobUrl: row.video_url,
-            blob: null,
-            duration: row.duration || 0,
-            durationFormatted: formatDuration(row.duration || 0),
-            status: "ready" as const,
-            progress: 100,
-            selected: false,
-            savedToDB: true,
-            is_posted: row.is_posted || false,
-          }));
+          // Higieniza duplicados/orfãos antes de mesclar com o banco.
+          let galleryItems: { supabaseId: string; item: import("@/services/mediaStorageService").GalleryMediaItem }[] = [];
+          try {
+            const gallery = await GalleryStorageService.cleanCorruptedGalleryState();
+            galleryItems = gallery
+              .filter((g) => g.supabaseId)
+              .map((g) => ({ supabaseId: g.supabaseId as string, item: g }));
+          } catch (err) {
+            console.warn("Erro ao carregar galeria local:", err);
+          }
+
+          const loaded: RenderedVideo[] = data
+            .map((row, i) => {
+              const gallery = galleryItems.find((g) => g.supabaseId === row.id);
+              const hasRemoteUrl = typeof row.video_url === "string" && /^https?:/.test(row.video_url);
+              const restoredBlob = gallery?.item.videoBlob ?? null;
+              return {
+                id: i + 1,
+                supabaseId: row.id,
+                galleryId: gallery?.item.id,
+                createdAt: gallery?.item.createdAt || row.created_at || undefined,
+                thumbUrl: gallery?.item.thumbnailBase64,
+                variation: row.variation_data || { id: "", blocks: [], expectedDuration: 0 },
+                blobUrl: restoredBlob ? getObjectUrl(restoredBlob) : hasRemoteUrl ? row.video_url : null,
+                blob: restoredBlob,
+                duration: row.duration || 0,
+                durationFormatted: formatDuration(row.duration || 0),
+                status: "ready" as const,
+                progress: 100,
+                selected: false,
+                savedToDB: true,
+                is_posted: row.is_posted || false,
+              };
+            })
+            // Remove "clones fantasmas": linhas sem binário local, sem URL
+            // permanente e sem miniatura (blob URL morta do Supabase) — não são
+            // reproduzíveis e apenas poluem a galeria.
+            .filter((v) => (v.blob instanceof Blob) || v.blobUrl || v.thumbUrl);
           setRenderedVideos(loaded);
         }
       } catch (err) {
@@ -390,6 +470,52 @@ export default function MassProductionPage() {
     }
   };
 
+  const uploadGeneratedVideo = async (blob: Blob, filename: string): Promise<string | null> => {
+    try {
+      const fd = new FormData();
+      fd.append("file", blob, filename);
+      const res = await fetch("/api/editor/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      return data?.success && typeof data.url === "string" ? data.url : null;
+    } catch (err) {
+      console.warn("Falha ao enviar video para armazenamento permanente:", err);
+      return null;
+    }
+  };
+
+  const persistGalleryItem = async (video: RenderedVideo, supabaseId: string) => {
+    try {
+      const parts = video.variation.id.replace("var_", "").split("_").map(Number);
+      const blockFiles = video.variation.blocks.map((b) => b.file);
+      const item = {
+        name: `Video_${String(video.id).padStart(2, "0")}.mp4`,
+        hookIndex: parts[0] ? parts[0] - 1 : 0,
+        devIndex: parts[1] ? parts[1] - 1 : 0,
+        ctaIndex: parts[parts.length - 1] ? parts[parts.length - 1] - 1 : 0,
+        hookBlob: blockFiles[0],
+        devBlob: blockFiles[1],
+        ctaBlob: blockFiles[blockFiles.length - 1],
+        videoBlob: video.blob ?? undefined,
+        duration: video.duration,
+        supabaseId,
+      };
+      await GalleryStorageService.saveGeneratedVideo(item);
+      let thumb: string | undefined;
+      try {
+        thumb = await captureVideoThumbnail(video.blob || blockFiles[0]);
+      } catch {
+        thumb = undefined;
+      }
+      const list = await GalleryStorageService.getGalleryVideos();
+      const saved = list.find((g) => g.supabaseId === supabaseId);
+      if (saved && thumb) {
+        await GalleryStorageService.updateVideo(saved.id, { thumbnailBase64: thumb });
+      }
+    } catch (err) {
+      console.warn("Falha ao persistir video na galeria local:", err);
+    }
+  };
+
   const togglePosted = async (supabaseId: string, currentStatus: boolean) => {
     try {
       const supabase = createClient();
@@ -411,21 +537,29 @@ export default function MassProductionPage() {
   const processQueue = async (variations: Variation[]) => {
     setQueueStatus({ isProcessing: true, current: 0, total: variations.length, percentage: 0, eta: "Calculando..." });
 
-    const initial: RenderedVideo[] = variations.map((variation, index) => ({
-      id: index + 1, variation, blobUrl: null, blob: null,
-      duration: variation.expectedDuration,
-      durationFormatted: formatDuration(variation.expectedDuration),
-      status: "pending" as const, progress: 0, selected: false, is_posted: false,
-    }));
+    // IDs únicos entre lotes: a lista NUNCA é substituída por uma nova geração,
+    // os vídeos anteriores continuam na tela (lote novo entra no topo).
+    const maxExistingId = renderedVideos.reduce((max, v) => Math.max(max, v.id), 0);
+    const startId = maxExistingId + 1;
 
-    setRenderedVideos(initial);
+    const initial: RenderedVideo[] = variations.map((variation, index) => {
+      const id = startId + index;
+      return {
+        id, variation, blobUrl: null, blob: null,
+        duration: variation.expectedDuration,
+        durationFormatted: formatDuration(variation.expectedDuration),
+        status: "pending" as const, progress: 0, selected: false, is_posted: false,
+      };
+    });
+
+    setRenderedVideos((prev) => deduplicateById([...initial, ...prev], (v) => v.id));
     setActiveView("results");
 
     const startTime = Date.now();
 
     for (let i = 0; i < variations.length; i++) {
       const variation = variations[i];
-      const videoId = i + 1;
+      const videoId = startId + i;
 
       setRenderedVideos((prev) => prev.map((v) => v.id === videoId ? { ...v, status: "concatenating", progress: 0 } : v));
 
@@ -446,6 +580,14 @@ export default function MassProductionPage() {
           renderMode, videoFormat, transition, transitionDuration
         );
 
+        // Cofre binário: grava os cortes fonte (hook/dev/cta) sob chaves estáveis
+        // para restaurar o envio ao editor mesmo após reload.
+        for (const block of variation.blocks) {
+          if (block.file instanceof Blob) {
+            void MediaVault.storeMediaIfMissing(`block-${block.id}`, block.file);
+          }
+        }
+
         await saveVideoToDB({
           id: `video_${videoId}_${Date.now()}`, variationId: videoId,
           hookName: variation.blocks[0]?.id || "", bodyName: variation.blocks[1]?.id || "",
@@ -453,11 +595,27 @@ export default function MassProductionPage() {
           blob: result.blob, duration: result.duration, createdAt: new Date(),
         });
 
-        // Save to Supabase
-        const supabaseId = await saveRenderedVideo(
-          { id: videoId, variation, blobUrl: result.url, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
-          result.url
+        // URL permanente (MinIO/S3) — sem ela o video ficaria "preto/indisponivel"
+        // num reload, pois a blob URL temporaria morre.
+        const permanentUrl = await uploadGeneratedVideo(
+          result.blob,
+          `Video_${String(videoId).padStart(2, "0")}.mp4`
         );
+
+        // Save to Supabase (guarda a URL permanente, não a blob temporária)
+        const supabaseId = await saveRenderedVideo(
+          { id: videoId, variation, blobUrl: permanentUrl || result.url, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
+          permanentUrl || result.url
+        );
+
+        // Persistência real no IndexedDB (blobs + miniatura) — a Galeria recria
+        // as blob URLs a partir daqui após reload/HMR, sem ERR_FILE_NOT_FOUND.
+        if (supabaseId) {
+          void persistGalleryItem(
+            { id: videoId, supabaseId, variation, blobUrl: result.url, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false, savedToDB: true },
+            supabaseId
+          );
+        }
 
         setRenderedVideos((prev) => prev.map((v) =>
           v.id === videoId ? { ...v, blobUrl: result.url, blob: result.blob, duration: result.duration,
@@ -468,7 +626,7 @@ export default function MassProductionPage() {
         try {
           const link = document.createElement("a");
           link.href = result.url;
-          link.download = `video_variacao_${videoId}.mp4`;
+          link.download = `Video_${String(videoId).padStart(2, "0")}.mp4`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -486,7 +644,6 @@ export default function MassProductionPage() {
 
   const activeColumns: { key: string; label: string; count: number }[] = [];
   if (hookVideos.length > 0) activeColumns.push({ key: "hook", label: "HOOK", count: hookVideos.length });
-  if (dorVideos.length > 0) activeColumns.push({ key: "dor", label: "DOR", count: dorVideos.length });
   if (devVideos.length > 0) activeColumns.push({ key: "development", label: "DESENVOLVIMENTO", count: devVideos.length });
   if (ctaVideos.length > 0) activeColumns.push({ key: "cta", label: "CTA", count: ctaVideos.length });
 
@@ -503,12 +660,12 @@ export default function MassProductionPage() {
 
     const categories: VideoBlock[][] = [];
     if (hookVideos.length > 0) categories.push(toBlocks(hookVideos));
-    if (dorVideos.length > 0) categories.push(toBlocks(dorVideos));
     if (devVideos.length > 0) categories.push(toBlocks(devVideos));
     if (ctaVideos.length > 0) categories.push(toBlocks(ctaVideos));
 
     const matrix = generateMatrix(...categories);
-    await processQueue(matrix);
+    const shuffled = fisherYatesShuffle(matrix);
+    await processQueue(shuffled);
   };
 
   const selectAll = () => {
@@ -516,11 +673,73 @@ export default function MassProductionPage() {
     setRenderedVideos((prev) => prev.map((v) => ({ ...v, selected: !allSelected })));
   };
 
+  const toggleSelect = (id: number) => {
+    setRenderedVideos((prev) =>
+      prev.map((v) => (v.id === id ? { ...v, selected: !v.selected } : v))
+    );
+  };
+
+  const toggleSelectionMode = () => {
+    setIsSelectionMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        // Ao sair do modo de selecao, limpa todas as selecoes.
+        setRenderedVideos((cur) => cur.map((v) => ({ ...v, selected: false })));
+      }
+      return next;
+    });
+  };
+
+  const selectedCount = renderedVideos.filter((v) => v.selected).length;
+
+  const getCombinationFiles = (video: RenderedVideo): File[] | null => {
+    const files = video.variation.blocks
+      .map((b) => b.file)
+      .filter((f): f is File => !!f && typeof File !== "undefined" && f instanceof File);
+    return files.length >= 2 ? files : null;
+  };
+
+  const handleSendToEditor = async (video: RenderedVideo) => {
+    const count = await sendVariationToEditor(video.variation);
+    if (count === 0) {
+      alert("Este video foi carregado do banco sem os arquivos locais. Regere a variacao para enviar ao editor.");
+      return;
+    }
+    router.push("/editor");
+  };
+
+  const handleSendSelectedToEditor = async () => {
+    const selected = renderedVideos.filter((v) => v.selected);
+    if (selected.length === 0) return;
+    const count = await sendBatchToEditor(selected.map((v) => v.variation));
+    if (count === 0) {
+      alert("Nenhum arquivo local disponivel nos videos selecionados.");
+      return;
+    }
+    router.push("/editor");
+  };
+
+  const removeFromGallery = async (video: RenderedVideo) => {
+    try {
+      if (video.galleryId) {
+        await GalleryStorageService.deleteVideo(video.galleryId);
+      }
+      if (video.supabaseId) {
+        const supabase = createClient();
+        await supabase.from("rendered_videos").delete().eq("id", video.supabaseId);
+      }
+      setRenderedVideos((prev) => prev.filter((v) => v.id !== video.id));
+    } catch (err) {
+      console.warn("Erro ao excluir video:", err);
+    }
+  };
+
   const downloadVideo = (video: RenderedVideo) => {
-    if (video.blobUrl) {
+    const sourceUrl = video.blob instanceof Blob ? getObjectUrl(video.blob) : video.blobUrl;
+    if (sourceUrl) {
       const link = document.createElement("a");
-      link.href = video.blobUrl;
-      link.download = `variation_${video.id}.mp4`;
+      link.href = sourceUrl;
+      link.download = `Video_${String(video.id).padStart(2, "0")}.mp4`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -533,8 +752,64 @@ export default function MassProductionPage() {
     }
   };
 
+  const downloadInQueue = async (videos: RenderedVideo[]) => {
+    for (const video of videos) {
+      downloadVideo(video);
+      // Intervalo de segurança para o navegador não bloquear downloads múltiplos
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  };
+
   const downloadAll = () => {
-    renderedVideos.filter((v) => v.status === "ready" && v.blobUrl).forEach((video) => downloadVideo(video));
+    const targets = renderedVideos.filter((v) => v.status === "ready");
+    void downloadInQueue(targets);
+  };
+
+  const downloadSelected = () => {
+    const targets = renderedVideos.filter((v) => v.selected && v.status === "ready");
+    if (targets.length === 0) return;
+    void downloadInQueue(targets);
+  };
+
+  const deleteSelected = () => {
+    const ids = renderedVideos.filter((v) => v.selected).map((v) => v.id);
+    if (ids.length === 0) return;
+    setConfirmDelete(ids);
+  };
+
+  const executeDeleteSelected = async () => {
+    if (!confirmDelete) return;
+    for (const id of confirmDelete) {
+      const video = renderedVideos.find((v) => v.id === id);
+      if (video) await removeFromGallery(video);
+    }
+    setConfirmDelete(null);
+  };
+
+  const downloadZip = async () => {
+    const hasSelected = renderedVideos.some((v) => v.selected && v.status === "ready");
+    const targets = hasSelected
+      ? renderedVideos.filter((v) => v.selected && v.status === "ready")
+      : renderedVideos.filter((v) => v.status === "ready");
+    if (targets.length === 0) return;
+    try {
+      const files = targets
+        .map((video) => {
+          const blob = video.blob;
+          if (!(blob instanceof Blob)) return null;
+          return { name: `Video_${String(video.id).padStart(2, "0")}.mp4`, blob };
+        })
+        .filter((f): f is { name: string; blob: Blob } => f !== null);
+      if (files.length === 0) {
+        alert("Nenhum blob local disponivel para compactar.");
+        return;
+      }
+      const zip = await buildZip(files);
+      await downloadBlob(zip, `nexia-videos-${new Date().toISOString().slice(0, 10)}.zip`);
+    } catch (err) {
+      console.error("Erro ao gerar ZIP:", err);
+      alert("Falha ao compactar os videos.");
+    }
   };
 
   const filteredVideos = renderedVideos.filter((v) => {
@@ -575,17 +850,16 @@ export default function MassProductionPage() {
             <HardDrive className="w-5 h-5 text-gray-400" />
             <div className="flex-1">
               <p className="text-sm text-gray-300"><span className="font-medium text-white">Limite por categoria:</span> {MAX_VIDEOS_PER_CATEGORY} videos</p>
-              <p className="text-xs text-gray-500">Coluna DOR e opcional — se vazia, sera ignorada na concatenacao</p>
+              <p className="text-xs text-gray-500">Cada variacao combina 1 trecho de cada slot: Hook + Desenvolvimento + CTA</p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium text-white">{totalLoaded} / {MAX_VIDEOS_PER_CATEGORY * 4}</p>
+              <p className="text-sm font-medium text-white">{totalLoaded} / {MAX_VIDEOS_PER_CATEGORY * 3}</p>
               <p className="text-xs text-gray-500">arquivos carregados</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 my-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-6">
             <UploadBox title="🎯 HOOK (Gancho)" category="hook" accentColor="border-pink-500 bg-pink-500/5 text-pink-400" description="Trecho inicial de atracao (primeiros 3s)" videos={hookVideos} onUpload={(f) => handleUpload("hook", f)} onRemove={(id) => handleRemove("hook", id)} onPlay={handlePlay} limit={MAX_VIDEOS_PER_CATEGORY} />
-            <UploadBox title="⚡ DOR / PROBLEMA" category="dor" accentColor="border-red-500 bg-red-500/5 text-red-400" description="Identificar a dor do cliente (Opcional)" videos={dorVideos} onUpload={(f) => handleUpload("dor", f)} onRemove={(id) => handleRemove("dor", id)} onPlay={handlePlay} limit={MAX_VIDEOS_PER_CATEGORY} optional />
             <UploadBox title="✨ DESENVOLVIMENTO / SOLUCAO" category="development" accentColor="border-cyan-500 bg-cyan-500/5 text-cyan-400" description="Trecho central com a mensagem principal" videos={devVideos} onUpload={(f) => handleUpload("development", f)} onRemove={(id) => handleRemove("development", id)} onPlay={handlePlay} limit={MAX_VIDEOS_PER_CATEGORY} />
             <UploadBox title="📢 CTA (Final)" category="cta" accentColor="border-emerald-500 bg-emerald-500/5 text-emerald-400" description="Chamada para acao (Inscricao, compra, etc)" videos={ctaVideos} onUpload={(f) => handleUpload("cta", f)} onRemove={(id) => handleRemove("cta", id)} onPlay={handlePlay} limit={MAX_VIDEOS_PER_CATEGORY} />
           </div>
@@ -650,7 +924,6 @@ export default function MassProductionPage() {
                     {i > 0 && <span className="text-gray-500">×</span>}
                     <span className={`px-4 py-2 rounded-xl border ${
                       col.key === "hook" ? "bg-pink-500/10 text-pink-400 border-pink-500/20" :
-                      col.key === "dor" ? "bg-red-500/10 text-red-400 border-red-500/20" :
                       col.key === "development" ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" :
                       "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                     }`}>{col.count} {col.label}</span>
@@ -707,7 +980,7 @@ export default function MassProductionPage() {
             <>
               {/* Filter + Actions */}
               <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   {/* Filter */}
                   <div className="flex items-center bg-[#1c1c28] border border-gray-800 rounded-xl p-0.5">
                     <button onClick={() => setVideoFilter("all")} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${videoFilter === "all" ? "bg-[var(--primary)]/15 text-[var(--primary)]" : "text-gray-400 hover:text-white"}`}>
@@ -721,17 +994,49 @@ export default function MassProductionPage() {
                     </button>
                   </div>
 
-                  <button onClick={selectAll} className="bg-[#1c1c28] border border-gray-800 text-gray-300 text-sm py-2 px-4 rounded-xl hover:bg-[#2a2a3a] transition-colors">
-                    {renderedVideos.every((v) => v.selected) ? "Desmarcar Todos" : "Selecionar Todos"}
-                  </button>
-                  {renderedVideos.some((v) => v.selected) && (
-                    <span className="text-sm text-gray-400">{renderedVideos.filter((v) => v.selected).length} selecionados</span>
+                  {/* Modo de selecao dinâmico */}
+                  {!isSelectionMode ? (
+                    <button onClick={toggleSelectionMode}
+                      className="bg-[var(--primary)]/15 border border-[var(--primary)]/30 text-[var(--primary)] text-sm py-2 px-4 rounded-xl hover:bg-[var(--primary)]/25 transition-colors">
+                      ☑️ Selecionar
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={toggleSelectionMode}
+                        className="bg-[#1c1c28] border border-gray-700 text-gray-300 text-sm py-2 px-4 rounded-xl hover:bg-[#2a2a3a] transition-colors">
+                        ✕ Cancelar Selecao
+                      </button>
+                      <button onClick={selectAll} className="bg-[#1c1c28] border border-gray-800 text-gray-300 text-sm py-2 px-4 rounded-xl hover:bg-[#2a2a3a] transition-colors">
+                        {renderedVideos.every((v) => v.selected) ? "Desmarcar Todos" : "Selecionar Todos"}
+                      </button>
+                      <span className="text-sm text-gray-400 font-medium">({selectedCount} selecionado{selectedCount === 1 ? "" : "s"})</span>
+                    </>
                   )}
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {isSelectionMode && (
+                    <>
+                      <button onClick={handleSendSelectedToEditor} disabled={selectedCount === 0}
+                        className="bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 text-sm py-2 px-4 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50">
+                        <Send className="w-4 h-4" /> Enviar ({selectedCount})
+                      </button>
+                      <button onClick={downloadSelected} disabled={!renderedVideos.some((v) => v.selected && v.status === "ready")}
+                        className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 text-sm py-2 px-4 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50">
+                        <Download className="w-4 h-4" /> Baixar ({selectedCount})
+                      </button>
+                      <button onClick={deleteSelected} disabled={selectedCount === 0}
+                        className="bg-red-600/20 hover:bg-red-600/40 text-red-300 text-sm py-2 px-4 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50">
+                        <Trash2 className="w-4 h-4" /> Excluir ({selectedCount})
+                      </button>
+                    </>
+                  )}
+                  <button onClick={downloadZip} disabled={!renderedVideos.some((v) => v.status === "ready")}
+                    className="bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 text-sm py-2 px-4 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50">
+                    <Archive className="w-4 h-4" /> ZIP
+                  </button>
                   <button onClick={downloadAll} disabled={!renderedVideos.some((v) => v.status === "ready")}
-                    className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 text-sm py-2 px-4 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50">
-                    <Archive className="w-4 h-4" /> Baixar Todos
+                    className="bg-slate-600/20 hover:bg-slate-600/40 text-slate-300 text-sm py-2 px-4 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50">
+                    <Download className="w-4 h-4" /> Baixar Todos
                   </button>
                 </div>
               </div>
@@ -739,9 +1044,20 @@ export default function MassProductionPage() {
               {/* Video Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredVideos.map((video) => (
-                  <div key={video.id} className={`bg-[#1c1c28] border rounded-xl p-4 flex flex-col gap-3 transition-all ${video.is_posted ? "border-blue-500/30 opacity-70" : "border-gray-800"}`}>
+                  <div key={video.id} className={`bg-[#1c1c28] border rounded-xl p-4 flex flex-col gap-3 transition-all ${video.selected ? "border-[var(--primary)]/60 ring-1 ring-[var(--primary)]/30" : video.is_posted ? "border-blue-500/30 opacity-70" : "border-gray-800"}`}>
                     {/* Player */}
                     <div className="relative">
+                      {/* Selecao individual — checkbox puro, sem texto (modo selecao) */}
+                      {isSelectionMode && (
+                        <label className="absolute top-2 left-2 z-10 flex items-center justify-center p-1 rounded-md bg-black/60 backdrop-blur-sm border border-gray-700/60 cursor-pointer hover:border-[var(--primary)] transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={video.selected}
+                            onChange={() => toggleSelect(video.id)}
+                            className="w-4 h-4 rounded border-gray-600 accent-[var(--primary)] bg-zinc-900 cursor-pointer"
+                          />
+                        </label>
+                      )}
                       {video.status === "pending" || video.status === "concatenating" ? (
                         <div className={`w-full ${getAspectClass(videoFormat)} rounded-lg bg-[#252535] flex flex-col items-center justify-center gap-2`}>
                           <Loader className="w-8 h-8 text-[var(--primary)] animate-spin" />
@@ -759,43 +1075,48 @@ export default function MassProductionPage() {
                           <p className="text-xs text-red-300">{video.error || "Erro"}</p>
                         </div>
                       ) : (
-                        <video src={video.blobUrl || ""} controls className={`w-full ${getAspectClass(videoFormat)} rounded-lg bg-black object-cover`} />
-                      )}
-
-                      {video.status === "ready" && (
-                        <div className="absolute top-2 right-2 flex items-center gap-1">
-                          {video.is_posted && (
-                            <span className="px-2 py-1 rounded-full bg-blue-500/90 text-white text-xs font-medium flex items-center gap-1">
-                              <CheckCircle className="w-3 h-3" /> Postado
-                            </span>
-                          )}
-                          {video.savedToDB && !video.is_posted && (
-                            <span className="px-1.5 py-0.5 rounded bg-blue-500/90 text-white text-[10px]">💾 Salvo</span>
-                          )}
-                          {!video.is_posted && (
-                            <span className="px-2 py-1 rounded-full bg-emerald-500/90 text-white text-xs font-medium flex items-center gap-1">
-                              <Check className="w-3 h-3" /> Pronto
-                            </span>
-                          )}
-                        </div>
+                        <GalleryVideoPlayer video={video} aspectClass={getAspectClass(videoFormat)} />
                       )}
                     </div>
 
                     {/* Details */}
                     <div>
-                      <h4 className="text-white font-semibold">Variacao #{video.id}</h4>
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-white font-semibold">Vídeo #{String(video.id).padStart(2, "0")}</h4>
+                        <button
+                          onClick={() => void removeFromGallery(video)}
+                          className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          title="Excluir da galeria"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <p className="text-xs text-gray-400">{video.variation.blocks.map((b) => b.id).join(" + ")}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <MediaIntegrityBadge
+                          hasLocalBlob={video.blob instanceof Blob}
+                          remoteUrl={video.blobUrl}
+                        />
                         <Clock className="w-3 h-3 text-gray-500" />
                         <span className="text-xs text-gray-500">{video.durationFormatted}</span>
+                        {video.createdAt && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            ⏳ {galleryRemainingLabel(video.createdAt)}
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="grid grid-cols-4 gap-2 pt-2 border-t border-gray-800">
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-800">
                       <button onClick={() => downloadVideo(video)} disabled={video.status !== "ready"}
                         className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 text-xs py-2 px-1 rounded flex items-center justify-center gap-1 transition-colors disabled:opacity-30">
                         ⬇️ Baixar
+                      </button>
+                      <button onClick={() => handleSendToEditor(video)} disabled={video.status !== "ready" || !getCombinationFiles(video)}
+                        className="bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 text-xs py-2 px-1 rounded flex items-center justify-center gap-1 transition-colors disabled:opacity-30"
+                        title="Enviar os 3 trechos (Hook + Desenvolvimento + CTA) para o editor">
+                        🎬 Editor
                       </button>
                       <button
                         onClick={() => video.supabaseId && togglePosted(video.supabaseId, video.is_posted)}
@@ -822,10 +1143,9 @@ export default function MassProductionPage() {
 
           {/* Tab 2: Used Media */}
           {resultsTab === "media" && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
                 { title: "🎯 Hooks", videos: hookVideos, color: "pink", category: "hook" as TagType },
-                { title: "⚡ Dores", videos: dorVideos, color: "red", category: "dor" as TagType },
                 { title: "✨ Desenvolvimentos", videos: devVideos, color: "cyan", category: "development" as TagType },
                 { title: "📢 CTAs", videos: ctaVideos, color: "emerald", category: "cta" as TagType },
               ].map((section) => (
@@ -846,12 +1166,48 @@ export default function MassProductionPage() {
                         </button>
                       </div>
                     ))}
-                    {section.videos.length === 0 && <p className="text-xs text-gray-500 text-center py-4">{section.category === "dor" ? "Opcional — nao utilizado" : "Nenhum video"}</p>}
+                    {section.videos.length === 0 && <p className="text-xs text-gray-500 text-center py-4">Nenhum video</p>}
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal de confirmacao de exclusao em massa */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setConfirmDelete(null)}>
+          <div className="bg-[#1c1c28] border border-gray-700 rounded-2xl p-6 w-full max-w-sm space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-[12px] bg-red-500/15 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Excluir videos?</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  {confirmDelete.length === 1
+                    ? "Este video sera removido da galeria e do banco de dados."
+                    : `${confirmDelete.length} videos serao removidos da galeria e do banco de dados.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 rounded-[10px] text-sm font-medium bg-[#252535] border border-gray-700 text-gray-400 hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void executeDeleteSelected()}
+                className="px-4 py-2 rounded-[10px] text-sm font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Excluir ({confirmDelete.length})
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

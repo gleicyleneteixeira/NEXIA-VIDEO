@@ -6,6 +6,7 @@ import { useUIStore, useProjectStore, useMediaStore, usePlaybackStore } from "@/
 import type { TimelineItem } from "@/lib/editor";
 import { DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_TEXT_PROPS, DEFAULT_CANVAS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, generateId, createDefaultItem, ASPECT_RATIOS } from "@/lib/editor";
 import { consumePendingPostImport } from "@/lib/editor/pendingPost";
+import { consumePendingFileImport } from "@/lib/editor/pendingFileImport";
 import { withHistory } from "@/lib/editor/history";
 import Timeline from "@/components/editor/Timeline";
 import Preview from "@/components/editor/Preview";
@@ -145,6 +146,13 @@ export default function EditorPage() {
     return () => window.removeEventListener("editor-media-import", handleMediaImport);
   }, [handleMediaImport]);
 
+  // Import pendente de arquivos vindos de outras telas (ex.: Criação em Massa).
+  useEffect(() => {
+    const files = consumePendingFileImport();
+    if (!files || files.length === 0) return;
+    handleMediaImport({ detail: { files } } as CustomEvent);
+  }, [handleMediaImport]);
+
   // Import pendente vindo do "Criar Vídeo no Editor" (calendário/posts).
   useEffect(() => {
     const pending = consumePendingPostImport();
@@ -161,7 +169,7 @@ export default function EditorPage() {
       );
 
       let imageId = "";
-      if (videoTrackId) {
+      if (videoTrackId && pending.imageDataUrl) {
         const imageItem = createDefaultItem({
           trackId: videoTrackId,
           startFrame: 0,
@@ -177,19 +185,37 @@ export default function EditorPage() {
       }
 
       if (textTrackId) {
-        const textItem = createDefaultItem({
-          trackId: textTrackId,
-          startFrame: 0,
-          durationInFrames: 90,
-          name: `Gancho DIA ${pending.dayNumber}`,
-          kind: "text",
-          text: {
-            ...DEFAULT_TEXT_PROPS,
-            content: pending.hook,
-            fontSize: 64,
-          },
-        });
-        withHistory("Inserir gancho do post", () => state.addItem(textItem));
+        if (pending.scriptTexts && pending.scriptTexts.length > 0) {
+          pending.scriptTexts.forEach((content, i) => {
+            const textItem = createDefaultItem({
+              trackId: textTrackId,
+              startFrame: i * 22,
+              durationInFrames: 22,
+              name: `Fala ${i + 1}`,
+              kind: "text",
+              text: {
+                ...DEFAULT_TEXT_PROPS,
+                content,
+                fontSize: 48,
+              },
+            });
+            withHistory("Inserir fala do roteiro", () => state.addItem(textItem));
+          });
+        } else if (pending.hook) {
+          const textItem = createDefaultItem({
+            trackId: textTrackId,
+            startFrame: 0,
+            durationInFrames: 90,
+            name: `Gancho DIA ${pending.dayNumber}`,
+            kind: "text",
+            text: {
+              ...DEFAULT_TEXT_PROPS,
+              content: pending.hook,
+              fontSize: 64,
+            },
+          });
+          withHistory("Inserir gancho do post", () => state.addItem(textItem));
+        }
       }
 
       void imageId;
