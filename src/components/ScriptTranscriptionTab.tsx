@@ -1,21 +1,27 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   AudioLines,
   CalendarDays,
   Check,
+  ChevronDown,
+  ChevronRight,
   CloudUpload,
   Copy,
   FileText,
+  History,
   Loader2,
   Mic,
   RefreshCcw,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { LocalWhisperService, WHISPER_MODELS } from "@/services/localWhisperService";
 import type { WhisperModelId } from "@/services/localWhisperService";
+import { TranscriptionHistoryService } from "@/services/transcriptionHistoryService";
+import type { TranscriptionHistoryItem } from "@/services/transcriptionHistoryService";
 
 const ACCEPTED = [".mp4", ".mov", ".webm", ".m4v", ".mp3", ".wav", ".m4a", ".ogg"];
 
@@ -40,6 +46,21 @@ export default function ScriptTranscriptionTab({
   const [model, setModel] = useState<WhisperModelId>("Xenova/whisper-tiny");
   const [isDragOver, setIsDragOver] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState<TranscriptionHistoryItem[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+
+  // Carrega o historico de transcricoes salvas (IndexedDB) no mount
+  useEffect(() => {
+    let active = true;
+    void TranscriptionHistoryService.getAll()
+      .then((items) => {
+        if (active) setHistory(items);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const isBusy = status === "working";
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -64,16 +85,25 @@ export default function ScriptTranscriptionTab({
     setStatusText("Preparando...");
 
     try {
-      const result = await LocalWhisperService.transcribe(
+      const result = await LocalWhisperService.transcribeFile(
         file,
+        model,
         (pct, msg) => {
           setProgress(pct);
           setStatusText(msg);
-        },
-        model
+        }
       );
       setText(result);
       setStatus("done");
+      try {
+        const saved = await TranscriptionHistoryService.saveItem(result, fileName ?? "");
+        setHistory((prev) => {
+          if (!saved || prev.some((i) => i.id === saved.id)) return prev;
+          return [saved, ...prev];
+        });
+      } catch {
+        // Auto-save do historico e best-effort; nao quebra a transcricao
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Falha ao transcrever o arquivo.";
       setError(msg);
@@ -96,6 +126,24 @@ export default function ScriptTranscriptionTab({
     setText("");
     setFileName(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleLoadFromHistory = (item: TranscriptionHistoryItem) => {
+    setText(item.fullText);
+    setFileName(item.originalFileName);
+    setStatus("done");
+    setError("");
+    setProgress(0);
+  };
+
+  const handleDeleteHistory = async (id: string) => {
+    await TranscriptionHistoryService.deleteItem(id).catch(() => {});
+    setHistory((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleClearHistory = async () => {
+    await TranscriptionHistoryService.clearAll().catch(() => {});
+    setHistory([]);
   };
 
   return (
@@ -279,6 +327,89 @@ export default function ScriptTranscriptionTab({
           </div>
         </div>
       )}
+
+      {/* Gaveta: Historico de Transcricoes Recentes */}
+      <div className="border border-[var(--border)] rounded-[14px] overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setIsHistoryOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-[var(--surface)]/50 hover:bg-[var(--surface)] transition-colors"
+        >
+          <span className="text-sm font-bold text-white flex items-center gap-2">
+            <History className="w-4 h-4 text-[var(--primary)]" />
+            Historico de Transcricoes Recentes
+            {history.length > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--primary)]/15 text-[var(--primary)]">
+                {history.length}
+              </span>
+            )}
+          </span>
+          {isHistoryOpen ? (
+            <ChevronDown className="w-4 h-4 text-[var(--text-secondary)]" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" />
+          )}
+        </button>
+
+        {isHistoryOpen && (
+          <div className="divide-y divide-[var(--border)] max-h-64 overflow-y-auto">
+            {history.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-[var(--text-secondary)]">
+                Nenhuma transcricao salva ainda. Ao transcrever um arquivo, o resultado e salvo
+                automaticamente aqui.
+              </p>
+            ) : (
+              history.map((item) => (
+                <div key={item.id} className="px-4 py-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate" title={item.title}>
+                      {item.title}
+                    </p>
+                    <p className="text-[11px] text-[var(--text-secondary)] truncate mt-0.5">
+                      {new Date(item.createdAt).toLocaleString("pt-BR", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })}
+                      {" • "}
+                      {item.originalFileName}
+                      {" • "}
+                      {item.wordCount.toLocaleString("pt-BR")} palavras
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleLoadFromHistory(item)}
+                      title="Carregar transcricao na tela"
+                      className="p-1.5 rounded-lg text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteHistory(item.id)}
+                      title="Excluir registro"
+                      className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+            {history.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void handleClearHistory()}
+                className="w-full px-4 py-2.5 text-xs text-[var(--text-secondary)] hover:text-[var(--danger)] flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Limpar todo o historico
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
