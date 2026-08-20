@@ -20,6 +20,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { useOpenRouterModel } from "@/hooks/useOpenRouterModel";
+import { AiKeyService } from "@/services/aiKeyService";
+import { useAiApiKey } from "@/hooks/useAiApiKey";
 
 const aiProviders = [
   {
@@ -70,11 +72,16 @@ export default function SettingsPage() {
     fetchError,
   } = useOpenRouterModel();
 
-  const [newKeyName, setNewKeyName] = useState("");
   const [newKeyValue, setNewKeyValue] = useState("");
 
+  const { hasKey, saveKey } = useAiApiKey();
+
   const [activeTab, setActiveTab] = useState("api");
-  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
+  const [providerKeys, setProviderKeys] = useState<Record<string, string>>((): Record<string, string> => {
+    const existing = AiKeyService.getToken();
+    if (!existing) return {};
+    return { openrouter: existing };
+  });
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
   const [selectedProvider, setSelectedProvider] = useState("grok");
@@ -94,10 +101,17 @@ export default function SettingsPage() {
   });
 
   const handleSaveApiKey = (provider: string) => {
-    setSavedKeys((prev) => ({ ...prev, [provider]: true }));
-    setTimeout(() => {
-      setSavedKeys((prev) => ({ ...prev, [provider]: false }));
-    }, 2000);
+    const value = (providerKeys[provider] || "").trim();
+    if (!value) {
+      return;
+    }
+    const ok = saveKey(value);
+    if (ok) {
+      setSavedKeys((prev) => ({ ...prev, [provider]: true }));
+      setTimeout(() => {
+        setSavedKeys((prev) => ({ ...prev, [provider]: false }));
+      }, 2500);
+    }
   };
 
   const toggleShowKey = (provider: string) => {
@@ -169,6 +183,23 @@ export default function SettingsPage() {
                     <p className="text-sm text-[var(--text-secondary)]">
                       Use suas próprias chaves de IA - sem custos extras!
                     </p>
+                    <span
+                      className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-full text-xs font-medium ${
+                        hasKey
+                          ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30"
+                          : "bg-[var(--accent-orange)]/15 text-[var(--accent-orange)] border border-[var(--accent-orange)]/30"
+                      }`}
+                    >
+                      {hasKey ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> Chave configurada
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-3.5 h-3.5" /> Nenhuma chave salva ainda
+                        </>
+                      )}
+                    </span>
                   </div>
                 </div>
 
@@ -232,42 +263,55 @@ export default function SettingsPage() {
                       </div>
 
                       {selectedProvider === provider.id && (
-                        <div className="relative">
-                          <input
-                            type={showKeys[provider.id] ? "text" : "password"}
-                            value={providerKeys[provider.id] || ""}
-                            onChange={(e) =>
-                              setProviderKeys((prev) => ({
-                                ...prev,
-                                [provider.id]: e.target.value,
-                              }))
-                            }
-                            placeholder={`Cole sua chave de API do ${provider.name}...`}
-                            className="input-field pr-20"
-                          />
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                            <button
-                              onClick={() => toggleShowKey(provider.id)}
-                              className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)]"
-                            >
-                              {showKeys[provider.id] ? (
-                                <EyeOff className="w-4 h-4 text-[var(--text-secondary)]" />
-                              ) : (
-                                <Eye className="w-4 h-4 text-[var(--text-secondary)]" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => handleSaveApiKey(provider.id)}
-                              className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)]"
-                            >
-                              {savedKeys[provider.id] ? (
-                                <Check className="w-4 h-4 text-[var(--accent-green)]" />
-                              ) : (
-                                <Save className="w-4 h-4 text-[var(--text-secondary)]" />
-                              )}
-                            </button>
+                        <>
+                          <div className="relative">
+                            <input
+                              type={showKeys[provider.id] ? "text" : "password"}
+                              value={providerKeys[provider.id] || ""}
+                              onChange={(e) =>
+                                setProviderKeys((prev) => ({
+                                  ...prev,
+                                  [provider.id]: e.target.value,
+                                }))
+                              }
+                              placeholder={`Cole sua chave de API do ${provider.name}...`}
+                              className="input-field pr-20"
+                            />
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                              <button
+                                onClick={() => toggleShowKey(provider.id)}
+                                className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)]"
+                              >
+                                {showKeys[provider.id] ? (
+                                  <EyeOff className="w-4 h-4 text-[var(--text-secondary)]" />
+                                ) : (
+                                  <Eye className="w-4 h-4 text-[var(--text-secondary)]" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleSaveApiKey(provider.id)}
+                                className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)]"
+                              >
+                                {savedKeys[provider.id] ? (
+                                  <Check className="w-4 h-4 text-[var(--accent-green)]" />
+                                ) : (
+                                  <Save className="w-4 h-4 text-[var(--text-secondary)]" />
+                                )}
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                          {savedKeys[provider.id] && (
+                            <p className="mt-2 text-xs text-[var(--accent-green)] flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5" />
+                              Chave de API salva com sucesso! Ela sera usada nas geracoes com IA.
+                            </p>
+                          )}
+                          {!savedKeys[provider.id] && providerKeys[provider.id] && (
+                            <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                              {hasKey ? "Chave ativa. Clique no disquete para salvar alteracoes." : ""}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   ))}

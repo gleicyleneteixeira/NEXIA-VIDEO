@@ -64,6 +64,10 @@ export async function POST(request: NextRequest) {
     if (typeof apiKey === "string" && apiKey.trim() && !keyList.includes(apiKey)) {
       keyList.push(apiKey.trim());
     }
+    const headerToken = request.headers.get("x-ai-custom-token")?.trim();
+    if (headerToken && !keyList.includes(headerToken)) {
+      keyList.push(headerToken);
+    }
     if (keyList.length === 0) {
       return NextResponse.json(
         { error: "Nenhuma API Key do OpenRouter configurada" },

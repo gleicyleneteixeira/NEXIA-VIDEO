@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { AiKeyService } from "@/services/aiKeyService";
 
 const DEFAULT_MODEL = "google/gemini-2.5-flash:free";
 const STORAGE_KEY = "openrouter_model";
-const API_KEY_STORAGE = "openrouter_api_key";
 const API_KEYS_STORAGE = "openrouter_api_keys";
 
 export interface ProcessedModel {
@@ -27,17 +27,22 @@ function getInitialModel(): string {
 
 function getInitialApiKey(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem(API_KEY_STORAGE) || "";
+  return AiKeyService.getToken();
 }
 
 function getInitialApiKeys(): string[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(API_KEYS_STORAGE);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
   } catch {}
   // Migrate from single key
-  const single = localStorage.getItem(API_KEY_STORAGE);
+  const single = AiKeyService.getToken();
   return single ? [single] : [];
 }
 
@@ -57,7 +62,7 @@ export function useOpenRouterModel() {
 
   const setApiKey = (key: string) => {
     setApiKeyState(key);
-    localStorage.setItem(API_KEY_STORAGE, key);
+    AiKeyService.setToken(key);
   };
 
   const setApiKeys = (keys: string[]) => {
@@ -80,7 +85,7 @@ export function useOpenRouterModel() {
     setFetchError(null);
     setIsLoadingModels(true);
     try {
-      const savedKey = localStorage.getItem(API_KEY_STORAGE) || "";
+      const savedKey = AiKeyService.getToken();
       const headers: Record<string, string> = {};
       if (savedKey) {
         headers["x-openrouter-key"] = savedKey;
@@ -127,8 +132,15 @@ export function useOpenRouterModel() {
   }, []);
 
   useEffect(() => {
-    fetchModels();
+    const raf = requestAnimationFrame(() => fetchModels());
+    return () => cancelAnimationFrame(raf);
   }, [fetchModels]);
+
+  useEffect(() => {
+    const syncKey = () => setApiKeyState(AiKeyService.getToken());
+    window.addEventListener("nexia_api_key_updated", syncKey);
+    return () => window.removeEventListener("nexia_api_key_updated", syncKey);
+  }, []);
 
   const filteredModels = useMemo(() => {
     if (!searchQuery.trim()) return models;

@@ -1,5 +1,7 @@
 "use client";
 
+import { AiKeyService } from "@/services/aiKeyService";
+
 export interface GenerateScriptsWithRealAIParams {
   topic: string;
   niche?: string;
@@ -35,7 +37,10 @@ export async function generateScriptsWithRealAI(
 ): Promise<AIScriptVariation[]> {
   const res = await fetch("/api/ai/generate-scripts", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-ai-custom-token": AiKeyService.getToken(),
+    },
     body: JSON.stringify(params),
   });
 

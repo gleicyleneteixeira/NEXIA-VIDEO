@@ -72,8 +72,13 @@ export async function POST(request: NextRequest) {
       publicoAlvo,
       produtoServico,
       model,
-      apiKey,
+      apiKey: bodyApiKey,
     } = body;
+
+    const apiKey =
+      (bodyApiKey && String(bodyApiKey).trim()) ||
+      request.headers.get("x-ai-custom-token")?.trim() ||
+      "";
 
     if (!theme || typeof theme !== "string") {
       return NextResponse.json({ error: "Tema e obrigatorio" }, { status: 400 });

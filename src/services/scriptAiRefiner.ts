@@ -1,5 +1,7 @@
 "use client";
 
+import { AiKeyService } from "@/services/aiKeyService";
+
 /**
  * Micro-IA opcional de polimento unitário.
  * Refina APENAS 1 variação por vez com prompt ultra-curto, gastando quase
@@ -31,7 +33,10 @@ export async function refineSingleVariationWithAi(
 ): Promise<Partial<RefinableScript>> {
   const response = await fetch("/api/ai/refine-script", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-ai-custom-token": AiKeyService.getToken(),
+    },
     body: JSON.stringify({
       currentScript: {
         headline: currentScript.headline,

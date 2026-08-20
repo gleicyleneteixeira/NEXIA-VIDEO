@@ -331,12 +331,17 @@ export async function POST(request: NextRequest) {
       duracao,
     } = payload;
 
+    const headerToken = request.headers.get("x-ai-custom-token")?.trim();
+
     const keyList: string[] = [];
     if (Array.isArray(apiKeys) && apiKeys.length > 0) {
       keyList.push(...apiKeys.filter((k: string) => k?.trim()));
     }
     if (apiKey?.trim() && !keyList.includes(apiKey)) {
       keyList.push(apiKey);
+    }
+    if (headerToken && !keyList.includes(headerToken)) {
+      keyList.push(headerToken);
     }
 
     if (keyList.length === 0) {

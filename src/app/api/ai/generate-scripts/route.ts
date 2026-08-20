@@ -375,6 +375,10 @@ export async function POST(request: NextRequest) {
     if (apiKey?.trim() && !keyList.includes(apiKey)) {
       keyList.push(apiKey);
     }
+    const headerToken = request.headers.get("x-ai-custom-token")?.trim();
+    if (headerToken && !keyList.includes(headerToken)) {
+      keyList.push(headerToken);
+    }
 
     if (keyList.length === 0) {
       return NextResponse.json(

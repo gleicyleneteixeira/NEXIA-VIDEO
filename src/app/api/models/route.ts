@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {
-    const openrouterKey = request.headers.get("x-openrouter-key") || "";
+    const openrouterKey =
+      request.headers.get("x-openrouter-key") ||
+      request.headers.get("x-ai-custom-token") ||
+      "";
 
     const headers: Record<string, string> = {};
     if (openrouterKey) {
