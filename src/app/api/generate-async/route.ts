@@ -63,7 +63,14 @@ Cada elemento do array representa 1 video e deve ter exatamente esta estrutura:
     "hashtags": ["tag1", "tag2", "tag3", "tag4", "tag5"]${hasMultipleObjectives ? `,
     "objective_foco": "Nome do objetivo foco deste video especifico"` : ""}
   }
-]`;
+]
+
+IDIOMA E HASHTAGS:
+- TODO o conteudo retornado DEVE ser em PORTUGUES BRASILEIRO. NUNCA gere texto em outro idioma.
+- As hashtags DEVEM ser em portugues, relevantes ao tema, e SEO-friendly paraReels/TikTok/Shorts.
+- Use hashtags populares do nicho brasileiro. Exemplos genericos quando adequado: #Reels #TikTok #Viral #Dicas #Fyp.
+- NUNCA use hashtags em ingles ou outro idioma que nao seja portugues.
+- As hashtags DEVEM refletir o Tema/Ideia Central do roteiro.`;
 
   const objectiveRule = hasMultipleObjectives
     ? `\n\nREGRAS IMPORTANTES PARA OBJETIVOS MULTIPLOS:

@@ -34,6 +34,13 @@ DIRETRIZES DE CRIACAO:
    }
    Cada roteiro DEVE ser completo e falavel em voz alta.
 
+IDIOMA E HASHTAGS:
+- TODO o conteudo retornado DEVE ser em PORTUGUES BRASILEIRO. NUNCA gere texto em outro idioma.
+- As hashtags DEVEM ser em portugues, relevantes ao tema, e SEO-friendly paraReels/TikTok/Shorts.
+- Use hashtags populares do nicho brasileiro. Exemplos genericos quando adequado: #Reels #TikTok #Viral #Dicas #Fyp.
+- NUNCA use hashtags em ingles ou outro idioma que nao seja portugues.
+- As hashtags DEVEM refletir o Tema/Ideia Central do roteiro.
+
 REGRAS DE MODULARIDADE (CRITICO):
 O usuario podera combinar QUALQUER Gancho + QUALQUER Desenvolvimento + QUALQUER CTA.
 Portanto, as 27 combinacoes possiveis (3x3x3) devem produzir roteiros coerentes, naturais e completos.
