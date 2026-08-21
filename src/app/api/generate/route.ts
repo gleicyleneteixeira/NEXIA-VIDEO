@@ -24,6 +24,12 @@ NAO ultrapasse o limite de palavras. Releia e ajuste antes de responder.`
 
 Sua tarefa: ler o briefing ou ideia livre do usuario (nao importa o nicho) e criar roteiros COMPLETOS, 100% coerentes, com excelente portugues falado (tom de conversa natural de live/Stories).
 
+CONTRATO DE CONTEXTO GLOBAL:
+A UNICA fonte de verdade e de contexto para todos os blocos e o briefing/tema inserido pelo usuario.
+O tema estabelece o universo semantico, o produto, as dores e a solucao que DEVEM estar presentes
+no ecossistema do roteiro. Nenhum bloco (Gancho, Desenvolvimento ou CTA) deve extrair contexto
+de outro bloco irmao. Todos os blocos devem extrair seu contexto exclusivamente do briefing.
+
 REGRAS DE OURO:
 1. ENTENDIMENTO REAL: Extraia o contexto profundo do briefing do usuario. Se ele citar contrastes, dores reais, produtos ou ofertas especificas, use esses elementos DENTRO do roteiro. NUNCA ignore o briefing e nunca substitua por temas genericos.
 2. ESTRUTURA EM 3 ATOS POR ROTEIRO:
@@ -32,6 +38,16 @@ REGRAS DE OURO:
    - CTA: Chamada direta com gatilho de oferta relampago, escassez ou comando para link da bio/comentarios.
 3. CONCORDANCIA PERFEITA: Portugues falado correto, com genero, numero e tempos verbais consistentes. NENHUMA frase quebrada.
 4. SAIDA ESTRITA: Retorne APENAS um array JSON valido, sem markdown.
+
+REGRAS DE MODULARIDADE (CRITICO):
+O usuario podera combinar QUALQUER Gancho + QUALQUER Desenvolvimento + QUALQUER CTA.
+As 27 combinacoes (3x3x3) devem ser coerentes.
+- CADA GANCHO: frase completa, apresenta o assunto, nao termina com reticencias/conectivos.
+- CADA DESENVOLVIMENTO: apresenta o assunto no inicio, estabelece proprio contexto,
+  nao responde a apenas um Gancho, termina de forma que qualquer CTA possa seguir.
+- CADA CTA: direto, independente, nao depender de informacao especifica do Desenvolvimento.
+- PROIBIDO: pronomes sem antecedente proprio, referencias cruzadas, continuacoes de frases.
+- Cada bloco deve extrair contexto EXCLUSIVAMENTE do briefing/tema.
 
 Cada elemento do array representa 1 video e deve ter exatamente esta estrutura:
 [
@@ -117,6 +133,8 @@ export async function POST(request: NextRequest) {
     if (durationConfig) {
       contextParts.push("Duracao desejada por video: " + durationConfig.label);
     }
+
+    contextParts.push("CONTRATO DE CONTEXTO GLOBAL: Todos os blocos devem ser independentes e intercambiaveis. Contexto exclusivamente do briefing.");
 
     const contextStr = contextParts.length > 0
       ? "\n\nContexto adicional:\n" + contextParts.join("\n")

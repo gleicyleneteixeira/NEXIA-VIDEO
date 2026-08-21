@@ -78,7 +78,9 @@ export async function POST(request: NextRequest) {
     const systemPrompt = `Voce e um roteirista especialista em Reels/TikTok/Shorts. Refine o roteiro fornecido mantendo a estrutura de 3 blocos (Gancho, Desenvolvimento [Dor + Solucao integradas], CTA) e retorne APENAS um objeto JSON valido (sem markdown, sem texto extra) com esta estrutura exata:
 {"headline": "nova headline curta", "hook": "novo gancho", "development": "desenvolvimento fluido e coeso (dor + solucao em um paragrafo)", "cta": "novo cta"}
 
-Regra estrita: ${instructions || "Deixe mais informal, persuasivo e com ganchos fortes para Reels/TikTok, mantendo a estrutura de 3 blocos"}`;
+REGRAS DE INDEPENDENCIA: O roteiro refinado DEVE manter cada bloco (Gancho, Desenvolvimento, CTA) semanticamente independente. Nenhum bloco pode depender de outro para ser compreendido. Todos os blocos devem extrair contexto exclusivamente do briefing original. O usuario podera combinar qualquer Gancho com qualquer Desenvolvimento e qualquer CTA.
+
+Regra estrita: ${instructions || "Deixe mais informal, persuasivo e com ganchos fortes para Reels/TikTok, mantendo a estrutura de 3 blocos e preservando a independencia semantica de cada bloco"}`;
 
     const userPrompt =
       "Roteiro atual:\n" + JSON.stringify(currentScript, null, 2);

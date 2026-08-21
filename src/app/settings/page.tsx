@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Settings,
   Key,
@@ -77,6 +77,7 @@ export default function SettingsPage() {
   const { hasKey, saveKey } = useAiApiKey();
 
   const [activeTab, setActiveTab] = useState("api");
+  const [isMounted, setIsMounted] = useState(false);
   const [providerKeys, setProviderKeys] = useState<Record<string, string>>((): Record<string, string> => {
     const existing = AiKeyService.getToken();
     if (!existing) return {};
@@ -117,6 +118,11 @@ export default function SettingsPage() {
   const toggleShowKey = (provider: string) => {
     setShowKeys((prev) => ({ ...prev, [provider]: !prev[provider] }));
   };
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setIsMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const tabs = [
     { id: "api", label: "API Keys", icon: Key },
@@ -183,23 +189,25 @@ export default function SettingsPage() {
                     <p className="text-sm text-[var(--text-secondary)]">
                       Use suas próprias chaves de IA - sem custos extras!
                     </p>
-                    <span
-                      className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-full text-xs font-medium ${
-                        hasKey
-                          ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30"
-                          : "bg-[var(--accent-orange)]/15 text-[var(--accent-orange)] border border-[var(--accent-orange)]/30"
-                      }`}
-                    >
-                      {hasKey ? (
-                        <>
-                          <Check className="w-3.5 h-3.5" /> Chave configurada
-                        </>
-                      ) : (
-                        <>
-                          <AlertCircle className="w-3.5 h-3.5" /> Nenhuma chave salva ainda
-                        </>
-                      )}
-                    </span>
+                    {isMounted && (
+                      <span
+                        className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-full text-xs font-medium ${
+                          hasKey
+                            ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30"
+                            : "bg-[var(--accent-orange)]/15 text-[var(--accent-orange)] border border-[var(--accent-orange)]/30"
+                        }`}
+                      >
+                        {hasKey ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" /> Chave configurada
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="w-3.5 h-3.5" /> Nenhuma chave salva ainda
+                          </>
+                        )}
+                      </span>
+                    )}
                   </div>
                 </div>
 

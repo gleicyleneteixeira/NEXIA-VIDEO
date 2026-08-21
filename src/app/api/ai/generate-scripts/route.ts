@@ -3,7 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 const SYSTEM_INSTRUCTION = `Voce e o Diretor de Copywriting do SaaS NEXIA VIDEO.
 Sua unica funcao e receber o input do usuario (mesmo que seja uma ideia vaga, um desabafo desorganizado, sem pontuacao ou um texto longo) e criar roteiros virais e persuasivos para Reels/TikTok/Shorts.
 
-DIRETRIZES DE CRIAcaO:
+CONTRATO DE CONTEXTO GLOBAL:
+A UNICA fonte de verdade e de contexto para todos os blocos e o campo "Tema / Ideia Central" inserido pelo usuario.
+
+O Tema/Ideia Central estabelece o universo semantico, o produto, as dores e a solucao que DEVEM estar presentes no ecossistema do roteiro.
+
+Independencia de Blocos: Nenhum bloco (Gancho, Desenvolvimento ou CTA) deve extrair contexto de outro bloco irmao. Todos os blocos devem extrair seu contexto exclusivamente do Tema / Ideia Central do projeto.
+
+DIRETRIZES DE CRIACAO:
 1. INTERPRETACAO SEMANTICA:
    - Se o input for longo e com contrastes (ex: SP acha facil vs MG reprova), extraia o motivo real e use essa historia dentro do roteiro.
    - Se o input for uma unica palavra vaga (ex: "FGTS", "unhas", "advocacia"), crie um contexto completo de dor, desejo e solucao para aquele nicho.
@@ -25,7 +32,50 @@ DIRETRIZES DE CRIAcaO:
      "bRollSuggestions": ["broll 1", "broll 2", "broll 3"],
      "hashtags": ["tag1", "tag2", "tag3"]
    }
-   Cada roteiro DEVE ser completo e falavel em voz alta.`;
+   Cada roteiro DEVE ser completo e falavel em voz alta.
+
+REGRAS DE MODULARIDADE (CRITICO):
+O usuario podera combinar QUALQUER Gancho + QUALQUER Desenvolvimento + QUALQUER CTA.
+Portanto, as 27 combinacoes possiveis (3x3x3) devem produzir roteiros coerentes, naturais e completos.
+
+CADA BLOCO DEVE:
+- Extrair contexto EXCLUSIVAMENTE do Tema/Ideia Central
+- Ser semanticamente independente dos outros blocos
+- Apresentar claramente seu proprio contexto (assunto, problema, solucao)
+- Funcionar perfeitamente depois de QUALQUER Gancho
+- Funcionar perfeitamente antes de QUALQUER CTA
+- Usar substantivos explicitos em vez de pronomes sem antecedente proprio
+
+CADA GANCHO DEVE:
+- Ser uma frase completa ou pergunta completa
+- Apresentar claramente o assunto
+- Nao terminar com reticencias ou conectivos abertos ("porque", "e", "mas")
+- Nao depender de continuacao
+
+CADA DESENVOLVIMENTO DEVE:
+- Apresentar claramente o assunto no inicio (nao comecar com "Isso", "Essa tecnica", "Ele", "Um deles")
+- Estabelecer seu proprio contexto sem pressupor leitura previa
+- Nao responder diretamente a apenas um dos Ganchos
+- Terminar de forma que QUALQUER CTA possa ser colocado depois
+
+CADA CTA DEVE:
+- Ser direto e independente
+- Nao depender de informacao especifica do Desenvolvimento
+- Nao usar construcoes como "Agora que voce aprendeu...", "Depois de conhecer...", "Se voce quer treinar..."
+- Funcionar com qualquer combinacao anterior
+
+PROIBIDO EM QUALQUER BLOCO:
+- Referencias anafóricas sem antecedente dentro do proprio bloco ("Esse teste", "Essa tecnica", "Isso", "Ele", "Aquele", "Um deles")
+- Responder diretamente a pergunta de apenas um Gancho
+- Continuar frase iniciada em outro bloco
+- Depender de personagem, objeto ou situacao apresentada em outro bloco
+- Terminar Ganchos com reticencias ou conectivos abertos
+- Terminar Desenvolvimentos com frases que preparem um CTA especifico
+
+VALIDACAO INTERNA:
+Apos gerar os blocos, teste mentalmente todas as 27 combinacoes (G1-D1-C1, G1-D1-C2, ..., G3-D3-C3).
+Se qualquer combinacao falhar por contexto ausente, referencia sem antecedente, continuidade artificial ou mudanca brusca de assunto, reescreva o bloco responsavel.
+O criterio final: "Qualquer combinacao G+D+C parece ter sido escrita especificamente para aquela combinacao?" Se NAO, reescrever.`;
 
 const RECOMMENDED_FREE_MODELS = [
   "google/gemini-2.5-flash:free",
@@ -76,12 +126,86 @@ function buildUserPrompt(params: {
     );
   }
   lines.push(
+    "CONTRATO DE CONTEXTO GLOBAL: O Tema/Ideia Central abaixo e a UNICA fonte de contexto. " +
+    "Todos os blocos (Gancho, Desenvolvimento, CTA) devem extrair contexto EXCLUSIVAMENTE deste Tema. " +
+    "Nenhum bloco pode depender de outro bloco. Os 3 Ganchos, 3 Desenvolvimentos e 3 CTAs devem ser " +
+    "totalmente independentes e intercambiaveis. Qualquer combinacao G+D+C deve parecer ter sido " +
+    "escrita especificamente para aquela combinacao."
+  );
+  lines.push(
     "INPUT / BRIEFING BRUTO DO USUARIO (use TODO o texto, sem resumir):\n\"\"\"\n" +
       params.topic +
       "\n\"\"\""
   );
 
   return lines.join("\n");
+}
+
+function validateBlockIndependence(
+  variations: Record<string, unknown>[]
+): { valid: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+
+  const PROHIBITED_DEV_STARTS = [
+    /^isso\b/i,
+    /^essa\s/i,
+    /^esse\s/i,
+    /^este\s/i,
+    /^esta\s/i,
+    /^ele\s/i,
+    /^ela\s/i,
+    /^um deles/i,
+    /^os outros/i,
+    /^o primeiro/i,
+    /^o segundo/i,
+    /^o terceiro/i,
+    /^como vimos/i,
+    /^como explicado/i,
+    /^essa tecnica/i,
+    /^essa pessoa/i,
+    /^esse caso/i,
+    /^esse teste/i,
+  ];
+
+  const HOOK_ENDINGS =
+    /\.\.\.$|,\s*$|\bporque\s*$|\be\s*$|\bmas\s*$|\bpor isso\s*$|\bentao\s*$/i;
+
+  const DEV_ANSWERS_HOOK =
+    /^(sim,|nao,|exatamente|claro|obviamente|como (dito|visto|explicado))/i;
+
+  const CTA_DEPENDENCY =
+    /^(agora que|depois de|com isso|assim|portanto|sendo assim)/i;
+
+  variations.forEach((v, idx) => {
+    const hook = String(v.hook || "").trim();
+    const dev = String(v.development || "").trim();
+    const cta = String(v.cta || "").trim();
+
+    if (HOOK_ENDINGS.test(hook)) {
+      warnings.push(
+        `Variacao ${idx + 1}: Gancho termina com conectivo/reticencias (intercambiabilidade comprometida)`
+      );
+    }
+
+    if (PROHIBITED_DEV_STARTS.some((re) => re.test(dev))) {
+      warnings.push(
+        `Variacao ${idx + 1}: Desenvolvimento comeca com construcao proibida (dependencia com Gancho)`
+      );
+    }
+    if (DEV_ANSWERS_HOOK.test(dev)) {
+      warnings.push(
+        `Variacao ${idx + 1}: Desenvolvimento parece responder a um Gancho especifico`
+      );
+    }
+
+    if (CTA_DEPENDENCY.test(cta)) {
+      warnings.push(
+        `Variacao ${idx + 1}: CTA depende de contexto anterior (viola independencia)`
+      );
+    }
+  });
+
+  return { valid: warnings.length === 0, warnings };
 }
 
 function parseJsonResponse(content: string): Record<string, unknown>[] | null {
@@ -279,7 +403,6 @@ async function callOpenRouter(
               (typeof errData?.error === "string" ? errData.error : "");
             if (msg) detail += ": " + String(msg).slice(0, 160);
 
-            // OpenRouter indica o slug equivalente quando o :free está indisponivel
             const match = /use this slug instead:\s*([\w.\-/:]+)/i.exec(String(msg || ""));
             if (match?.[1]) hintSlug = match[1].trim();
           } catch {}
@@ -433,7 +556,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ success: true, variations, usedModel: result.usedModel });
+    const modularityCheck = validateBlockIndependence(
+      variations as unknown as Record<string, unknown>[]
+    );
+
+    return NextResponse.json({
+      success: true,
+      variations,
+      usedModel: result.usedModel,
+      ...(modularityCheck.warnings.length > 0
+        ? { _modularityWarnings: modularityCheck.warnings }
+        : {}),
+    });
   } catch (err) {
     console.error("Erro em /api/ai/generate-scripts:", err);
     return NextResponse.json(
