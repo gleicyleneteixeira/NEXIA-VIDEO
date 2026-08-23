@@ -1,0 +1,17 @@
+
+> contenthub@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.12 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.100.48:3000
+- Environments: .env.local
+✓ Ready in 1274ms
+
+ GET /login 200 in 1073ms (next.js: 714ms, proxy.ts: 20ms, application-code: 339ms)
+ GET /login 200 in 64ms (next.js: 24ms, proxy.ts: 6ms, application-code: 35ms)
+ GET /login 200 in 53ms (next.js: 9ms, proxy.ts: 6ms, application-code: 39ms)
+ GET /api/models 200 in 707ms (next.js: 233ms, proxy.ts: 4ms, application-code: 470ms)
+○ Compiling /settings ...
+ GET /settings 200 in 7.3s (next.js: 5.8s, proxy.ts: 1312ms, application-code: 224ms)
+ GET /api/models 200 in 775ms (next.js: 5ms, proxy.ts: 636ms, application-code: 134ms)
