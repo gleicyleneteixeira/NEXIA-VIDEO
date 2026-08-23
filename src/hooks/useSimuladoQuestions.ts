@@ -137,19 +137,22 @@ async function fetchCategoryExamQuestions(
     } else {
       // FALLBACK: Category has less than 30 questions
       // Fill the remaining with general questions (from other categories)
-      const remainingCount = 30 - shuffledCategory.length;
+      const needed = 30 - shuffledCategory.length;
 
+      // Puxa uma margem maior para garantir randomidade nas extras
       const { data: extraQuestions, error: extraError } = await supabase
         .from("questions")
         .select("*")
         .neq("category", selectedCategory)
-        .limit(remainingCount);
+        .limit(needed * 2);
 
       if (extraError) throw extraError;
 
+      const shuffledExtra = extraQuestions ? extraQuestions.sort(() => Math.random() - 0.5).slice(0, needed) : [];
+
       // Combine category questions with extra general questions
       const categoryShuffled = shuffledCategory.sort(() => Math.random() - 0.5);
-      const extraShuffled = (extraQuestions || []).sort(() => Math.random() - 0.5);
+      const extraShuffled = (shuffledExtra || []).sort(() => Math.random() - 0.5);
       
       const combined = [...categoryShuffled, ...extraShuffled].sort(
         () => Math.random() - 0.5
