@@ -160,7 +160,14 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-2 lg:px-6 py-8 space-y-8 animate-fade-in">
+    <div className="relative isolate w-full max-w-[1600px] mx-auto px-2 lg:px-6 py-8 space-y-8 animate-fade-in">
+      {/* Ambiência: orbes de iluminação rosado/púrpura desfocados */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-32 -left-24 w-[480px] h-[480px] rounded-full bg-pink-600/20 blur-[120px]" />
+        <div className="absolute top-1/3 -right-24 w-[520px] h-[520px] rounded-full bg-purple-600/20 blur-[120px]" />
+        <div className="absolute bottom-10 left-1/3 w-[420px] h-[420px] rounded-full bg-fuchsia-600/10 blur-[120px]" />
+      </div>
+
       {/* Título de boas-vindas */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -178,7 +185,7 @@ export default function DashboardPage() {
 
         <Link
           href="/script"
-          className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95 text-white text-xs lg:text-sm font-bold rounded-xl shadow-lg shadow-purple-600/20 transition-all"
+          className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-xs lg:text-sm font-medium rounded-xl shadow-lg shadow-pink-500/25 border border-pink-400/30 transition-all"
         >
           <Plus className="w-4 h-4" />
           Criar Novo Roteiro
@@ -192,7 +199,7 @@ export default function DashboardPage() {
           return (
             <div
               key={stat.label}
-              className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-5 shadow-xl flex items-center justify-between"
+              className="bg-zinc-900/40 backdrop-blur-xl border border-white/10 shadow-2xl shadow-purple-950/20 rounded-2xl p-5 hover:border-pink-500/30 transition-all flex items-center justify-between"
             >
               <div>
                 <span className="text-xs font-semibold text-zinc-400 tracking-wide uppercase">
@@ -218,9 +225,10 @@ export default function DashboardPage() {
               <Link
                 key={action.title}
                 href={action.href}
-                className={`bg-[#101018] bg-gradient-to-br ${action.tint} border border-zinc-800/80 ${action.border} rounded-2xl p-5 shadow-xl transition-all cursor-pointer group flex flex-col justify-between`}
+                className="relative bg-zinc-900/40 backdrop-blur-xl border border-white/10 shadow-2xl shadow-purple-950/20 rounded-2xl p-5 transition-all cursor-pointer group flex flex-col justify-between hover:border-pink-500/30"
               >
-                <div className="space-y-2">
+                <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${action.tint} opacity-60 pointer-events-none`} />
+                <div className="space-y-2 relative">
                   <div className={`w-9 h-9 rounded-xl ${action.iconCls} flex items-center justify-center`}>
                     <Icon className="w-4 h-4" />
                   </div>
@@ -242,7 +250,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Roteiros Recentes */}
-      <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl shadow-xl overflow-hidden">
+      <div className="bg-zinc-900/30 backdrop-blur-md border border-white/5 rounded-2xl shadow-xl overflow-hidden">
         <div className="flex items-center justify-between p-6 pb-4">
           <div>
             <h2 className="text-base font-bold text-white">Roteiros Recentes</h2>
@@ -265,10 +273,10 @@ export default function DashboardPage() {
             <p className="text-sm text-zinc-400 mb-6 max-w-md mx-auto">
               Comece usando o Gerador de Conteúdo com IA para criar roteiros automáticos para seus vídeos.
             </p>
-            <Link
-              href="/script"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95 text-white text-sm font-bold shadow-lg shadow-purple-600/20 transition-all"
-            >
+              <Link
+                href="/script"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white text-sm font-medium shadow-lg shadow-pink-500/25 border border-pink-400/30 transition-all"
+              >
               <Sparkles className="w-4 h-4" />
               Ir para Roteiro & IA
             </Link>
@@ -277,7 +285,7 @@ export default function DashboardPage() {
           <div className="w-full overflow-x-auto px-2 pb-2">
             <table className="w-full text-left border-collapse text-xs lg:text-sm">
               <thead>
-                <tr className="border-b border-zinc-800/80 text-zinc-400 uppercase tracking-wider text-[11px]">
+                 <tr className="border-b border-white/5 text-zinc-400 uppercase tracking-wider text-[11px]">
                   <th className="py-3 px-4">Roteiro</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Vídeos</th>
@@ -287,7 +295,7 @@ export default function DashboardPage() {
               </thead>
               <tbody className="divide-y divide-zinc-800/50">
                 {data.recentScripts.map((script) => (
-                  <tr key={script.id} className="hover:bg-zinc-900/40 transition-colors group">
+                  <tr key={script.id} className="hover:bg-white/5 transition-colors group">
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-6 rounded-md bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">

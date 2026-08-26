@@ -36,7 +36,7 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-[72px] h-screen shrink-0 bg-[var(--secondary)] border-r border-[var(--border-subtle)] flex flex-col relative">
+    <aside className="w-[72px] h-screen shrink-0 bg-[#0a0d14]/70 backdrop-blur-xl border-r border-white/10 flex flex-col relative">
       {/* Ambient glow */}
       <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[var(--primary)]/5 to-transparent pointer-events-none" />
 

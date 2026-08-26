@@ -38,6 +38,7 @@ import {
   getVideoDuration,
 } from "@/lib/videoEngine";
 import { saveVideoToDB } from "@/lib/storage";
+import { uploadVideoToSupabase } from "@/services/supabaseStorage";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { getObjectUrl, recoverFromDeadUrl } from "@/utils/mediaBlobManager";
@@ -157,6 +158,10 @@ interface RenderedVideo {
   selected: boolean;
   error?: string;
   savedToDB?: boolean;
+  /** URL pública do Supabase Storage (nuvem) quando o upload teve sucesso */
+  videoUrl?: string;
+  /** true quando o vídeo está hospedado na nuvem (Supabase Storage) */
+  isCloud?: boolean;
   is_posted: boolean;
 }
 
@@ -525,6 +530,8 @@ export default function MassProductionPage() {
                 variation: row.variation_data || { id: "", blocks: [], expectedDuration: 0 },
                 blobUrl: restoredBlob ? getObjectUrl(restoredBlob) : hasRemoteUrl ? row.video_url : null,
                 blob: restoredBlob,
+                videoUrl: hasRemoteUrl ? row.video_url : undefined,
+                isCloud: hasRemoteUrl,
                 duration: row.duration || 0,
                 durationFormatted: formatDuration(row.duration || 0),
                 status: "ready" as const,
@@ -717,17 +724,30 @@ export default function MassProductionPage() {
           blob: result.blob, duration: result.duration, createdAt: new Date(),
         });
 
-        // URL permanente (MinIO/S3) — sem ela o video ficaria "preto/indisponivel"
-        // num reload, pois a blob URL temporaria morre.
+        // URL permanente (MinIO/S3) — fallback secundario caso o Supabase Storage falhe.
         const permanentUrl = await uploadGeneratedVideo(
           result.blob,
           `Video_${String(videoId).padStart(2, "0")}.mp4`
         );
 
+        // Upload para o Supabase Storage (nuvem primaria). Em caso de falha,
+        // mantemos o fallback S3/local e avisamos para re-tentativa manual.
+        let cloudUrl: string | null = null;
+        try {
+          cloudUrl = await uploadVideoToSupabase(
+            result.blob,
+            `Video_${String(videoId).padStart(2, "0")}.mp4`
+          );
+        } catch (uploadErr) {
+          console.warn("[MassProduction] Falha no upload Supabase Storage (usando fallback S3/local):", uploadErr);
+        }
+
+        const storedUrl = cloudUrl || permanentUrl || result.url;
+
         // Save to Supabase (guarda a URL permanente, não a blob temporária)
         const supabaseId = await saveRenderedVideo(
-          { id: videoId, variation, blobUrl: permanentUrl || result.url, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
-          permanentUrl || result.url
+          { id: videoId, variation, blobUrl: storedUrl, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
+          storedUrl
         );
 
         // Persistência real no IndexedDB (blobs + miniatura) — a Galeria recria
@@ -741,7 +761,8 @@ export default function MassProductionPage() {
 
         setRenderedVideos((prev) => prev.map((v) =>
           v.id === videoId ? { ...v, blobUrl: result.url, blob: result.blob, duration: result.duration,
-            durationFormatted: formatDurationLong(result.duration), status: "ready", progress: 100, savedToDB: true, supabaseId: supabaseId || undefined } : v
+            durationFormatted: formatDurationLong(result.duration), status: "ready", progress: 100, savedToDB: true,
+            supabaseId: supabaseId || undefined, videoUrl: cloudUrl ?? undefined, isCloud: !!cloudUrl } : v
         ));
 
         // Auto-download video immediately upon completion
@@ -889,7 +910,8 @@ export default function MassProductionPage() {
   };
 
   const downloadVideo = (video: RenderedVideo) => {
-    const sourceUrl = video.blob instanceof Blob ? getObjectUrl(video.blob) : video.blobUrl;
+    // Prioriza a URL pública do Supabase Storage (nuvem); cai para o blob/local.
+    const sourceUrl = video.videoUrl || (video.blob instanceof Blob ? getObjectUrl(video.blob) : video.blobUrl);
     if (sourceUrl) {
       const link = document.createElement("a");
       link.href = sourceUrl;
@@ -947,15 +969,23 @@ export default function MassProductionPage() {
       : renderedVideos.filter((v) => v.status === "ready");
     if (targets.length === 0) return;
     try {
-      const files = targets
-        .map((video) => {
-          const blob = video.blob;
-          if (!(blob instanceof Blob)) return null;
-          return { name: `Video_${String(video.id).padStart(2, "0")}.mp4`, blob };
-        })
-        .filter((f): f is { name: string; blob: Blob } => f !== null);
+      const files: { name: string; blob: Blob }[] = [];
+      for (const video of targets) {
+        const name = `Video_${String(video.id).padStart(2, "0")}.mp4`;
+        let blob: Blob | null = null;
+        // Busca direto da URL pública do Supabase Storage quando hospedado na nuvem.
+        if (video.videoUrl) {
+          try {
+            blob = await (await fetch(video.videoUrl)).blob();
+          } catch {
+            blob = null;
+          }
+        }
+        if (!blob && video.blob instanceof Blob) blob = video.blob;
+        if (blob) files.push({ name, blob });
+      }
       if (files.length === 0) {
-        alert("Nenhum blob local disponivel para compactar.");
+        alert("Nenhum vídeo disponível para compactar (nuvem ou local).");
         return;
       }
       const zip = await buildZip(files);
@@ -1285,8 +1315,13 @@ export default function MassProductionPage() {
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <MediaIntegrityBadge
                           hasLocalBlob={video.blob instanceof Blob}
-                          remoteUrl={video.blobUrl}
+                          remoteUrl={video.videoUrl || video.blobUrl}
                         />
+                        {video.isCloud && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                            ☁ Nuvem
+                          </span>
+                        )}
                         <Clock className="w-3 h-3 text-gray-500" />
                         <span className="text-xs text-gray-500">{video.durationFormatted}</span>
                         {video.createdAt && (

@@ -4,7 +4,7 @@ import { Bell, Search, User, ChevronDown } from "lucide-react";
 
 export default function Header() {
   return (
-    <header className="h-16 border-b border-[var(--border-subtle)] flex items-center justify-between px-6 shrink-0 bg-[var(--secondary)]/50 backdrop-blur-md relative">
+    <header className="h-16 border-b border-white/10 flex items-center justify-between px-6 shrink-0 bg-[#0a0d14]/60 backdrop-blur-md relative">
       {/* Subtle top glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-px bg-gradient-to-r from-transparent via-[var(--primary)]/20 to-transparent" />
 
