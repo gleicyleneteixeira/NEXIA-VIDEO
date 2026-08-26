@@ -16,15 +16,19 @@ import {
   Loader2,
   Lightbulb,
 } from "lucide-react";
+import { getStockSearchKeywords, buildStockMediaUrls } from "@/utils/stockSearchHelper";
 
 export interface Variation {
   hook: string;
   dor?: string;
   desejo?: string;
+  painOrDesire?: string;
+  solution?: string;
   development?: string;
   cta: string;
   headline: string;
   caption: string;
+  seoCaption?: string;
   hashtags: string[];
   scene_direction: string;
   brolls: string[];
@@ -90,7 +94,11 @@ export default function ContentCard({
   const [expanded, setExpanded] = useState(index === 0);
   const [copiedScript, setCopiedScript] = useState(false);
 
-  const fullCaption = variation.caption + "\n\n" + (variation.hashtags || []).map((t) => "#" + t).join(" ");
+  const fullCaption =
+    (variation.seoCaption || variation.caption || "").trim() +
+    (variation.hashtags && variation.hashtags.length > 0
+      ? "\n\n" + variation.hashtags.map((t) => "#" + t).join(" ")
+      : "");
 
   const handleCopyScript = () => {
     navigator.clipboard.writeText(fullCaption);
@@ -98,9 +106,11 @@ export default function ContentCard({
     setTimeout(() => setCopiedScript(false), 2000);
   };
 
-  const pexelsUrl = "https://www.pexels.com/search/" + encodeURIComponent(theme);
-  const pixabayUrl = "https://pixabay.com/videos/search/" + encodeURIComponent(theme);
-  const mixkitUrl = "https://mixkit.co/free-stock-video/" + encodeURIComponent(theme);
+  const stockKeywords = getStockSearchKeywords(variation.brolls?.[0], theme);
+  const stockUrls = buildStockMediaUrls(stockKeywords);
+  const pexelsUrl = stockUrls.pexels;
+  const pixabayUrl = stockUrls.pixabay;
+  const mixkitUrl = stockUrls.mixkit;
 
   return (
     <div className="glass-card rounded-[var(--radius)] overflow-hidden animate-slide-up" style={{ animationDelay: `${index * 0.08}s` }}>
@@ -208,10 +218,29 @@ export default function ContentCard({
       {/* Content */}
       {expanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-[var(--border-subtle)]">
-          {/* 3-Block Copy: Gancho / Desenvolvimento (Dor+Solução) / CTA */}
+          {/* 4-Block Copy: Gancho / Dor-Desejo-Duvida / Solucao / CTA */}
           <div className="pt-3 space-y-2">
-            <CopyBox label="Gancho (Hook)" text={variation.hook} icon={Target} accent="#ec4899" />
-            {variation.development ? (
+            <CopyBox label="Slot 1 · Gancho (Hook)" text={variation.hook} icon={Target} accent="#ec4899" />
+            {variation.painOrDesire || variation.solution ? (
+              <>
+                {variation.painOrDesire && (
+                  <CopyBox
+                    label="Slot 2 · Dor / Desejo / Dúvida"
+                    text={variation.painOrDesire}
+                    icon={Zap}
+                    accent="#f59e0b"
+                  />
+                )}
+                {variation.solution && (
+                  <CopyBox
+                    label="Slot 3 · Solução"
+                    text={variation.solution}
+                    icon={Lightbulb}
+                    accent="#8b5cf6"
+                  />
+                )}
+              </>
+            ) : variation.development ? (
               <CopyBox
                 label="Desenvolvimento (Dor + Solução)"
                 text={variation.development}
@@ -228,7 +257,7 @@ export default function ContentCard({
                 )}
               </>
             )}
-            <CopyBox label="CTA (Chamada)" text={variation.cta} icon={Megaphone} accent="#10b981" />
+            <CopyBox label="Slot 4 · CTA (Chamada)" text={variation.cta} icon={Megaphone} accent="#10b981" />
           </div>
 
           {/* Headline & Caption */}

@@ -223,15 +223,19 @@ export default function ScriptPage() {
       return;
     }
     try {
-      const development =
+      const painOrDesire =
+        variation.painOrDesire ||
+        variation.dor ||
         variation.development ||
-        [variation.dor, variation.desejo].filter(Boolean).join("\n\n");
+        "";
+      const solution = variation.solution || variation.desejo || "";
 
       const refined = await refineSingleVariationWithAi(
         {
           headline: variation.headline,
           hook: variation.hook,
-          development,
+          painOrDesire,
+          solution,
           cta: variation.cta,
         },
         { model: selectedModel, apiKey, apiKeys }
@@ -242,15 +246,19 @@ export default function ScriptPage() {
         const current = next[index];
         if (!current) return prev;
         const hook = refined.hook ?? current.hook;
-        const dev = refined.development ?? current.development ?? development;
+        const pain = refined.painOrDesire ?? current.painOrDesire ?? painOrDesire;
+        const sol = refined.solution ?? current.solution ?? solution;
         const cta = refined.cta ?? current.cta;
         next[index] = {
           ...current,
           headline: refined.headline ?? current.headline,
           hook,
-          development: dev,
+          painOrDesire: pain,
+          solution: sol,
+          development: [pain, sol].filter(Boolean).join("\n\n") || current.development,
           cta,
-          caption: `${hook}\n\n${dev}\n\n👉 ${cta}`,
+          seoCaption: [hook, pain, sol, `👉 ${cta}`].filter(Boolean).join("\n\n"),
+          caption: [hook, pain, sol, `👉 ${cta}`].filter(Boolean).join("\n\n"),
         };
         return next;
       });
@@ -304,8 +312,10 @@ export default function ScriptPage() {
       format: "script",
       scriptTexts: [
         variation.hook,
-        variation.development ||
+        variation.painOrDesire ||
+          variation.development ||
           [variation.dor, variation.desejo].filter(Boolean).join("\n\n"),
+        variation.solution || variation.desejo || "",
         variation.cta,
       ].filter(Boolean),
     });

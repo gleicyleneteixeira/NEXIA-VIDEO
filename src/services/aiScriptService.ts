@@ -19,12 +19,30 @@ export interface AIScriptVariation {
   angleName: string;
   headline: string;
   hook: string;
-  development: string;
+  painOrDesire: string;
+  solution: string;
   cta: string;
+  seoCaption: string;
+  development?: string;
   scene_direction: string;
   brolls: string[];
   hashtags: string[];
   objective_foco?: string;
+}
+
+export interface ScriptFourBlockVariation {
+  id: string;
+  index: number;
+  angleName: string;
+  headline: string;
+  hook: string;
+  painOrDesire: string;
+  solution: string;
+  cta: string;
+  seoCaption: string;
+  hashtags: string[];
+  sceneDirection?: string;
+  bRollSuggestions?: string[];
 }
 
 /**

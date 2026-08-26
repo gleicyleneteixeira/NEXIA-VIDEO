@@ -75,12 +75,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const systemPrompt = `Voce e um roteirista especialista em Reels/TikTok/Shorts. Refine o roteiro fornecido mantendo a estrutura de 3 blocos (Gancho, Desenvolvimento [Dor + Solucao integradas], CTA) e retorne APENAS um objeto JSON valido (sem markdown, sem texto extra) com esta estrutura exata:
-{"headline": "nova headline curta", "hook": "novo gancho", "development": "desenvolvimento fluido e coeso (dor + solucao em um paragrafo)", "cta": "novo cta"}
+    const systemPrompt = `Voce e um roteirista especialista em Reels/TikTok/Shorts. Refine o roteiro fornecido mantendo a estrutura de 4 blocos modulares e independentes (Gancho, Dor/Desejo/Duvida, Solucao, CTA) e retorne APENAS um objeto JSON valido (sem markdown, sem texto extra) com esta estrutura exata:
+ {"headline": "nova headline curta", "hook": "novo gancho autonomo e finalizado", "painOrDesire": "dor/desejo/duvida com substantivos proprios, sem pronomes que referenciem o gancho", "solution": "solucao/metodo apresentado de forma limpa e independente", "cta": "novo cta direto e independente"}
 
-REGRAS DE INDEPENDENCIA: O roteiro refinado DEVE manter cada bloco (Gancho, Desenvolvimento, CTA) semanticamente independente. Nenhum bloco pode depender de outro para ser compreendido. Todos os blocos devem extrair contexto exclusivamente do briefing original. O usuario podera combinar qualquer Gancho com qualquer Desenvolvimento e qualquer CTA.
+ REGRAS DE INDEPENDENCIA: O roteiro refinado DEVE manter cada bloco (Gancho, Dor/Desejo/Duvida, Solucao, CTA) semanticamente independente. Nenhum bloco pode depender de outro para ser compreendido. Todos os blocos devem extrair contexto exclusivamente do briefing original. O usuario podera combinar qualquer Gancho com qualquer Dor/Desejo/Duvida, qualquer Solucao e qualquer CTA.
 
-Regra estrita: ${instructions || "Deixe mais informal, persuasivo e com ganchos fortes para Reels/TikTok, mantendo a estrutura de 3 blocos e preservando a independencia semantica de cada bloco"}`;
+ Regra estrita: ${instructions || "Deixe mais informal, persuasivo e com ganchos fortes para Reels/TikTok, mantendo a estrutura de 4 blocos e preservando a independencia semantica de cada bloco"}`;
 
     const userPrompt =
       "Roteiro atual:\n" + JSON.stringify(currentScript, null, 2);
@@ -148,8 +148,12 @@ Regra estrita: ${instructions || "Deixe mais informal, persuasivo e com ganchos 
               headline:
                 typeof parsed.headline === "string" ? parsed.headline : undefined,
               hook: parsed.hook,
-              development:
-                typeof parsed.development === "string" ? parsed.development : undefined,
+              painOrDesire:
+                typeof parsed.painOrDesire === "string"
+                  ? parsed.painOrDesire
+                  : undefined,
+              solution:
+                typeof parsed.solution === "string" ? parsed.solution : undefined,
               cta: typeof parsed.cta === "string" ? parsed.cta : undefined,
             });
           }

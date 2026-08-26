@@ -49,15 +49,20 @@ function buildTxtFile(projects: SavedScriptProject[]): string {
         `Quantidade: ${p.variationsCount}`,
         "",
         ...p.variations.map((v, i) => {
+          const painOrDesire = v.painOrDesire || v.development || "";
+          const solution = v.solution || "";
           return [
             `--- Roteiro ${i + 1}: ${v.headline} (${v.angleName}) ---`,
-            `HOOK:`,
+            `SLOT 1 - HOOK:`,
             v.hook,
             ``,
-            `DESENVOLVIMENTO:`,
-            v.development,
+            `SLOT 2 - DOR / DESEJO / DUVIDA:`,
+            painOrDesire,
             ``,
-            `CTA:`,
+            `SLOT 3 - SOLUCAO:`,
+            solution,
+            ``,
+            `SLOT 4 - CTA:`,
             v.cta,
             ``,
           ].join("\n");

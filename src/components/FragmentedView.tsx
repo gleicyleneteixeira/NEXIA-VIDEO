@@ -105,7 +105,61 @@ export default function FragmentedView({ variations }: FragmentedViewProps) {
   const hooks = variations.map((v, i) => ({ text: v.hook, index: i }));
   const ctas = variations.map((v, i) => ({ text: v.cta, index: i }));
 
-  // Modo 3 blocos (Gancho / Desenvolvimento / CTA) — estrutura moderna.
+  const hasFourBlocks = variations.some(
+    (v) => !!v.painOrDesire || !!v.solution
+  );
+
+  // Modo 4 blocos modulares (Gancho / Dor-Desejo-Duvida / Solucao / CTA).
+  if (hasFourBlocks) {
+    const pains = variations.map((v, i) => ({
+      text: v.painOrDesire || "",
+      index: i,
+    }));
+    const solutions = variations.map((v, i) => ({
+      text: v.solution || "",
+      index: i,
+    }));
+    return (
+      <div className="space-y-4 animate-fade-in">
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <div className="w-2 h-2 rounded-full bg-[var(--accent-orange)] animate-pulse" />
+          <p className="text-xs text-[var(--text-secondary)]">
+            Modo fragmentado: grave os 4 blocos de cada tipo de uma vez e combine como quiser
+          </p>
+        </div>
+        <BlockSection
+          title="Todos os GANCHOS / HOOKS (Slot 1)"
+          emoji="🎯"
+          items={hooks}
+          accent="#ec4899"
+          icon={Target}
+        />
+        <BlockSection
+          title="Todas as DORES / DESEJOS / DÚVIDAS (Slot 2)"
+          emoji="⚡"
+          items={pains}
+          accent="#f59e0b"
+          icon={Zap}
+        />
+        <BlockSection
+          title="Todas as SOLUÇÕES (Slot 3)"
+          emoji="💡"
+          items={solutions}
+          accent="#8b5cf6"
+          icon={Lightbulb}
+        />
+        <BlockSection
+          title="Todas as CTAs (Slot 4)"
+          emoji="📢"
+          items={ctas}
+          accent="#10b981"
+          icon={Megaphone}
+        />
+      </div>
+    );
+  }
+
+  // Fallback para conteúdo legado (Desenvolvimento único).
   if (variations.some((v) => !!v.development)) {
     const developments = variations.map((v, i) => ({
       text: v.development || "",
@@ -144,7 +198,7 @@ export default function FragmentedView({ variations }: FragmentedViewProps) {
     );
   }
 
-  // Fallback para conteúdo legado (4 blocos: Hook / Dor / Desejo / CTA).
+  // Fallback antigo (4 blocos: Hook / Dor / Desejo / CTA).
   const dores = variations.map((v, i) => ({ text: v.dor || "", index: i }));
   const desejos = variations.map((v, i) => ({ text: v.desejo || "", index: i }));
 

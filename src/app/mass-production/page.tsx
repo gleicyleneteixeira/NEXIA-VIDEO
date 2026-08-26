@@ -31,8 +31,8 @@ import {
   RenderMode,
   VideoFormat,
   VIDEO_FORMATS,
-  generateMatrix,
   concatenateVideosFFmpeg,
+  buildSingleVariationTrackList,
   formatDuration,
   formatDurationLong,
   getVideoDuration,
@@ -44,6 +44,7 @@ import { getObjectUrl, recoverFromDeadUrl } from "@/utils/mediaBlobManager";
 import {
   GalleryStorageService,
   galleryRemainingLabel,
+  GalleryMediaInput,
 } from "@/services/mediaStorageService";
 import { captureVideoThumbnail } from "@/utils/videoThumbnail";
 import { buildZip, downloadBlob } from "@/utils/zip";
@@ -56,11 +57,81 @@ import {
 import MediaIntegrityBadge from "@/components/media/MediaIntegrityBadge";
 import { MediaVault } from "@/services/persistentMediaVault";
 
-type TagType = "hook" | "development" | "cta";
+type TagType = "hook" | "bodyWithCta" | "development" | "painOrDesire" | "solution" | "cta";
 type ResultsTab = "generated" | "media";
 type VideoFilter = "all" | "not_posted" | "posted";
 
+export type BulkStructureMode = "2-slots" | "3-slots" | "4-slots";
+
+// Configuração dos slots para cada modalidade
+export const BULK_MODALITIES_CONFIG: Record<
+  BulkStructureMode,
+  { id: TagType; title: string; subtitle: string }[]
+> = {
+  "2-slots": [
+    { id: "hook", title: "🎯 HOOK (Gancho)", subtitle: "Trecho inicial de atração" },
+    { id: "bodyWithCta", title: "💡 DESENVOLVIMENTO + CTA", subtitle: "Conteúdo principal + Chamada final integrados" },
+  ],
+  "3-slots": [
+    { id: "hook", title: "🎯 HOOK (Gancho)", subtitle: "Trecho inicial (0-3s)" },
+    { id: "development", title: "💡 DESENVOLVIMENTO", subtitle: "Dor e Solução integradas" },
+    { id: "cta", title: "📢 CTA (Final)", subtitle: "Chamada para ação/Oferta" },
+  ],
+  "4-slots": [
+    { id: "hook", title: "🎯 HOOK (Gancho)", subtitle: "Trecho inicial" },
+    { id: "painOrDesire", title: "🌩️ DOR / DESEJO / DÚVIDA", subtitle: "Apresentação do problema" },
+    { id: "solution", title: "💡 SOLUÇÃO", subtitle: "Apresentação da solução/método" },
+    { id: "cta", title: "📢 CTA (Final)", subtitle: "Chamada para ação" },
+  ],
+};
+
+const SLOT_STYLE: Record<TagType, { accentColor: string; description: string }> = {
+  hook: { accentColor: "border-pink-500 bg-pink-500/5 text-pink-400", description: "Trecho inicial de atração (primeiros 3s)" },
+  bodyWithCta: { accentColor: "border-purple-500 bg-purple-500/5 text-purple-400", description: "Conteúdo principal + Chamada final integrados" },
+  development: { accentColor: "border-cyan-500 bg-cyan-500/5 text-cyan-400", description: "Dor e Solução integradas" },
+  painOrDesire: { accentColor: "border-purple-500 bg-purple-500/5 text-purple-400", description: "Apresentação do problema, busca ou dúvida" },
+  solution: { accentColor: "border-cyan-500 bg-cyan-500/5 text-cyan-400", description: "Apresentação do método, produto ou virada de chave" },
+  cta: { accentColor: "border-emerald-500 bg-emerald-500/5 text-emerald-400", description: "Chamada para ação (Inscrição, link da bio, compra)" },
+};
+
+const SLOT_LABEL: Record<TagType, string> = {
+  hook: "HOOK",
+  bodyWithCta: "CORPO+CTA",
+  development: "DESENVOLVIMENTO",
+  painOrDesire: "DOR/DESEJO",
+  solution: "SOLUÇÃO",
+  cta: "CTA",
+};
+
+const SLOT_GALLERY_FIELD: Record<
+  TagType,
+  { index: "hookIndex" | "painIndex" | "solutionIndex" | "devIndex" | "ctaIndex"; blob: "hookBlob" | "painBlob" | "solutionBlob" | "devBlob" | "ctaBlob" }
+> = {
+  hook: { index: "hookIndex", blob: "hookBlob" },
+  painOrDesire: { index: "painIndex", blob: "painBlob" },
+  solution: { index: "solutionIndex", blob: "solutionBlob" },
+  development: { index: "devIndex", blob: "devBlob" },
+  bodyWithCta: { index: "devIndex", blob: "devBlob" },
+  cta: { index: "ctaIndex", blob: "ctaBlob" },
+};
+
 const MAX_VIDEOS_PER_CATEGORY = 5;
+
+// Classes estáticas para o grid (Tailwind não gera classes dinâmicas)
+const GRID_COLS_BY_COUNT: Record<number, string> = {
+  2: "lg:grid-cols-2",
+  3: "lg:grid-cols-3",
+  4: "lg:grid-cols-4",
+};
+
+const SLOT_CHIP_COLOR: Record<TagType, string> = {
+  hook: "bg-pink-500/10 text-pink-400 border-pink-500/20",
+  bodyWithCta: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  development: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  painOrDesire: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  solution: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  cta: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+};
 
 interface UploadedVideo {
   id: string;
@@ -281,8 +352,12 @@ function UploadBox({
 
 export default function MassProductionPage() {
   const router = useRouter();
+  const [structureMode, setStructureMode] = useState<BulkStructureMode>("4-slots");
   const [hookVideos, setHookVideos] = useState<UploadedVideo[]>([]);
-  const [devVideos, setDevVideos] = useState<UploadedVideo[]>([]);
+  const [bodyVideos, setBodyVideos] = useState<UploadedVideo[]>([]);
+  const [developmentVideos, setDevelopmentVideos] = useState<UploadedVideo[]>([]);
+  const [painVideos, setPainVideos] = useState<UploadedVideo[]>([]);
+  const [solutionVideos, setSolutionVideos] = useState<UploadedVideo[]>([]);
   const [ctaVideos, setCtaVideos] = useState<UploadedVideo[]>([]);
   const [renderedVideos, setRenderedVideos] = useState<RenderedVideo[]>([]);
   const [activeView, setActiveView] = useState<"upload" | "results">("upload");
@@ -298,6 +373,12 @@ export default function MassProductionPage() {
   const [queueStatus, setQueueStatus] = useState<QueueStatus>({
     isProcessing: false, current: 0, total: 0, percentage: 0, eta: "0:00",
   });
+
+  // Trava rigida de execucao unica (sincrona). O estado `queueStatus.isProcessing`
+  // so atualiza apos o re-render, entao cliques rapidos em sequencia AINDA podem
+  // disparar varias `processQueue` em paralelo (cards Vídeo # duplicados). O ref
+  // e setado de imediato, bloqueando disparos paralelos de forma deterministica.
+  const isGeneratingRef = useRef(false);
 
   const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -333,13 +414,41 @@ export default function MassProductionPage() {
     });
   };
 
+  const getSlotVideos = (cat: TagType): UploadedVideo[] => {
+    switch (cat) {
+      case "hook": return hookVideos;
+      case "bodyWithCta": return bodyVideos;
+      case "development": return developmentVideos;
+      case "painOrDesire": return painVideos;
+      case "solution": return solutionVideos;
+      case "cta": return ctaVideos;
+    }
+  };
+
+  const addSlotVideos = (cat: TagType, vids: UploadedVideo[]) => {
+    switch (cat) {
+      case "hook": setHookVideos((p) => [...p, ...vids]); break;
+      case "bodyWithCta": setBodyVideos((p) => [...p, ...vids]); break;
+      case "development": setDevelopmentVideos((p) => [...p, ...vids]); break;
+      case "painOrDesire": setPainVideos((p) => [...p, ...vids]); break;
+      case "solution": setSolutionVideos((p) => [...p, ...vids]); break;
+      case "cta": setCtaVideos((p) => [...p, ...vids]); break;
+    }
+  };
+
+  const removeSlotVideo = (cat: TagType, id: string) => {
+    switch (cat) {
+      case "hook": setHookVideos((p) => p.filter((v) => v.id !== id)); break;
+      case "bodyWithCta": setBodyVideos((p) => p.filter((v) => v.id !== id)); break;
+      case "development": setDevelopmentVideos((p) => p.filter((v) => v.id !== id)); break;
+      case "painOrDesire": setPainVideos((p) => p.filter((v) => v.id !== id)); break;
+      case "solution": setSolutionVideos((p) => p.filter((v) => v.id !== id)); break;
+      case "cta": setCtaVideos((p) => p.filter((v) => v.id !== id)); break;
+    }
+  };
+
   const handleUpload = async (category: TagType, files: FileList) => {
-    const getCategoryCount = (cat: TagType) => {
-      if (cat === "hook") return hookVideos.length;
-      if (cat === "development") return devVideos.length;
-      return ctaVideos.length;
-    };
-    const currentCount = getCategoryCount(category);
+    const currentCount = getSlotVideos(category).length;
     const availableSlots = MAX_VIDEOS_PER_CATEGORY - currentCount;
     if (availableSlots <= 0) return;
 
@@ -352,7 +461,9 @@ export default function MassProductionPage() {
         const duration = await getVideoDuration(tempUrl);
         URL.revokeObjectURL(tempUrl);
 
-        const totalVideos = hookVideos.length + devVideos.length + ctaVideos.length;
+        const totalVideos =
+          hookVideos.length + bodyVideos.length + developmentVideos.length +
+          painVideos.length + solutionVideos.length + ctaVideos.length;
         if (totalVideos === 0) {
           const detected = await detectVideoFormat(file);
           setVideoFormat(detected);
@@ -362,15 +473,11 @@ export default function MassProductionPage() {
       }
     }
 
-    if (category === "hook") setHookVideos((prev) => [...prev, ...newVideos]);
-    else if (category === "development") setDevVideos((prev) => [...prev, ...newVideos]);
-    else setCtaVideos((prev) => [...prev, ...newVideos]);
+    if (newVideos.length > 0) addSlotVideos(category, newVideos);
   };
 
   const handleRemove = (category: TagType, id: string) => {
-    if (category === "hook") setHookVideos((prev) => prev.filter((v) => v.id !== id));
-    else if (category === "development") setDevVideos((prev) => prev.filter((v) => v.id !== id));
-    else setCtaVideos((prev) => prev.filter((v) => v.id !== id));
+    removeSlotVideo(category, id);
   };
 
   const handlePlay = (file: File) => {
@@ -487,18 +594,19 @@ export default function MassProductionPage() {
     try {
       const parts = video.variation.id.replace("var_", "").split("_").map(Number);
       const blockFiles = video.variation.blocks.map((b) => b.file);
-      const item = {
+      const slotIds = BULK_MODALITIES_CONFIG[structureMode].map((s) => s.id);
+      const item: GalleryMediaInput = {
         name: `Video_${String(video.id).padStart(2, "0")}.mp4`,
-        hookIndex: parts[0] ? parts[0] - 1 : 0,
-        devIndex: parts[1] ? parts[1] - 1 : 0,
-        ctaIndex: parts[parts.length - 1] ? parts[parts.length - 1] - 1 : 0,
-        hookBlob: blockFiles[0],
-        devBlob: blockFiles[1],
-        ctaBlob: blockFiles[blockFiles.length - 1],
         videoBlob: video.blob ?? undefined,
         duration: video.duration,
         supabaseId,
       };
+      slotIds.forEach((sid, i) => {
+        const field = SLOT_GALLERY_FIELD[sid];
+        const rec = item as unknown as Record<string, unknown>;
+        rec[field.index] = parts[i] ? parts[i] - 1 : 0;
+        rec[field.blob] = blockFiles[i];
+      });
       await GalleryStorageService.saveGeneratedVideo(item);
       let thumb: string | undefined;
       try {
@@ -574,10 +682,21 @@ export default function MassProductionPage() {
       });
 
       try {
-        const inputs = variation.blocks.map((b) => b.file);
+        // Monta a lista de entrada desta variacao: EXATAMENTE um arquivo por
+        // slot ativo da modalidade (sem loops/duplicatas). A ordem segue os
+        // slots da estrutura escolhida (activeSlotIds).
+        const slotFiles: Parameters<typeof buildSingleVariationTrackList>[1] = {};
+        activeSlotIds.forEach((sid, i) => {
+          const block = variation.blocks[i];
+          if (block?.file) {
+            (slotFiles as Record<string, File>)[sid] = block.file as File;
+          }
+        });
+        const inputs = buildSingleVariationTrackList(structureMode, slotFiles);
         const result = await concatenateVideosFFmpeg(inputs, `variation_${videoId}.mp4`,
           (progress) => { setRenderedVideos((prev) => prev.map((v) => v.id === videoId ? { ...v, progress } : v)); },
-          renderMode, videoFormat, transition, transitionDuration
+          renderMode, videoFormat, transition, transitionDuration,
+          variation.blocks.map((b) => Number(b.duration) || 0)
         );
 
         // Cofre binário: grava os cortes fonte (hook/dev/cta) sob chaves estáveis
@@ -590,7 +709,10 @@ export default function MassProductionPage() {
 
         await saveVideoToDB({
           id: `video_${videoId}_${Date.now()}`, variationId: videoId,
-          hookName: variation.blocks[0]?.id || "", bodyName: variation.blocks[1]?.id || "",
+          hookName: variation.blocks[0]?.id || "",
+          painName: variation.blocks[1]?.id || "",
+          solutionName: variation.blocks[2]?.id || "",
+          bodyName: variation.blocks[1]?.id || "",
           ctaName: variation.blocks[variation.blocks.length - 1]?.id || "",
           blob: result.blob, duration: result.duration, createdAt: new Date(),
         });
@@ -642,30 +764,62 @@ export default function MassProductionPage() {
     setQueueStatus({ isProcessing: false, current: variations.length, total: variations.length, percentage: 100, eta: "Concluido!" });
   };
 
+  const activeSlotIds = BULK_MODALITIES_CONFIG[structureMode].map((s) => s.id);
   const activeColumns: { key: string; label: string; count: number }[] = [];
-  if (hookVideos.length > 0) activeColumns.push({ key: "hook", label: "HOOK", count: hookVideos.length });
-  if (devVideos.length > 0) activeColumns.push({ key: "development", label: "DESENVOLVIMENTO", count: devVideos.length });
-  if (ctaVideos.length > 0) activeColumns.push({ key: "cta", label: "CTA", count: ctaVideos.length });
+  for (const id of activeSlotIds) {
+    const count = getSlotVideos(id).length;
+    if (count > 0) activeColumns.push({ key: id, label: SLOT_LABEL[id], count });
+  }
 
   const totalCombinations = activeColumns.reduce((acc, col) => acc * col.count, 1);
   const minColumnsOk = activeColumns.length >= 2;
   const totalLoaded = activeColumns.reduce((acc, c) => acc + c.count, 0);
 
   const generateCombinations = async () => {
+    // Trava anti-disparo-triplo: impede execucoes paralelas (cliques repetidos)
+    // que gerariam cards Vídeo # duplicados na galeria.
+    if (isGeneratingRef.current) return;
+    isGeneratingRef.current = true;
+    try {
     if (!minColumnsOk) { alert("Adicione videos em pelo menos 2 categorias (Hook + 1 outro)!"); return; }
     if (totalCombinations > 625) { alert("O limite maximo e 625 variacoes por sessao!"); return; }
 
-    const toBlocks = (arr: UploadedVideo[]): VideoBlock[] =>
-      arr.map((v) => ({ id: v.id, url: "", duration: v.duration, file: v.file }));
+    // Filtro RÍGIDO por modalidade: usa EXCLUSIVAMENTE os slots da estrutura
+    // selecionada (structureMode), na ordem de BULK_MODALITIES_CONFIG.
+    // Slots de OUTRAS modalidades (ex.: Slot 3/4 numa 2-slots) são IGNORADOS
+    // completamente — nunca vazam para a matriz de combinação, e cada variação
+    // recebe ESTRITAMENTE um arquivo por slot ativo (sem duplicar/clonar o
+    // mesmo clipe dentro do mesmo arquivo de saída).
+    const slotIds = BULK_MODALITIES_CONFIG[structureMode].map((s) => s.id);
+    const slotLists = slotIds.map((id) => getSlotVideos(id).filter((v) => v.file));
 
-    const categories: VideoBlock[][] = [];
-    if (hookVideos.length > 0) categories.push(toBlocks(hookVideos));
-    if (devVideos.length > 0) categories.push(toBlocks(devVideos));
-    if (ctaVideos.length > 0) categories.push(toBlocks(ctaVideos));
+    // Produto cartesiano ESTRITO apenas dos slots da modalidade ativa.
+    let combos: UploadedVideo[][] = [[]];
+    for (const list of slotLists) {
+      if (list.length === 0) continue;
+      const next: UploadedVideo[][] = [];
+      for (const combo of combos) {
+        for (const v of list) next.push([...combo, v]);
+      }
+      combos = next;
+    }
 
-    const matrix = generateMatrix(...categories);
-    const shuffled = fisherYatesShuffle(matrix);
+    const variations: Variation[] = combos.map((combo, idx) => {
+      const blocks: VideoBlock[] = combo.map((v) => ({
+        id: v.id,
+        url: "",
+        duration: v.duration,
+        file: v.file as File,
+      }));
+      const expectedDuration = blocks.reduce((acc, b) => acc + (b.duration || 0), 0);
+      return { id: `var_${idx + 1}`, blocks, expectedDuration };
+    });
+
+    const shuffled = fisherYatesShuffle(variations);
     await processQueue(shuffled);
+    } finally {
+      isGeneratingRef.current = false;
+    }
   };
 
   const selectAll = () => {
@@ -846,22 +1000,60 @@ export default function MassProductionPage() {
       {/* ========== UPLOAD VIEW ========== */}
       {activeView === "upload" && (
         <>
+          {/* Seletor de Estrutura de Vídeo */}
+          <div className="flex flex-col gap-2 mb-6 p-3 bg-zinc-900 border border-zinc-800 rounded-xl sm:flex-row sm:items-center">
+            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider shrink-0">
+              Estrutura do Vídeo:
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {(["2-slots", "3-slots", "4-slots"] as BulkStructureMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setStructureMode(mode)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                    structureMode === mode
+                      ? "bg-purple-600 text-white font-bold shadow-sm"
+                      : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  {mode === "2-slots"
+                    ? "2 Slots (Gancho + Corpo/CTA)"
+                    : mode === "3-slots"
+                    ? "3 Slots (Gancho + Desenv + CTA)"
+                    : "4 Slots (Gancho + Dor + Solução + CTA)"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="bg-[#1c1c28] border border-gray-800 rounded-xl p-4 mb-6 flex items-center gap-4">
             <HardDrive className="w-5 h-5 text-gray-400" />
             <div className="flex-1">
               <p className="text-sm text-gray-300"><span className="font-medium text-white">Limite por categoria:</span> {MAX_VIDEOS_PER_CATEGORY} videos</p>
-              <p className="text-xs text-gray-500">Cada variacao combina 1 trecho de cada slot: Hook + Desenvolvimento + CTA</p>
+              <p className="text-xs text-gray-500">Cada variacao combina 1 trecho de cada slot ativo na estrutura selecionada ({activeSlotIds.length} slots)</p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium text-white">{totalLoaded} / {MAX_VIDEOS_PER_CATEGORY * 3}</p>
+              <p className="text-sm font-medium text-white">{totalLoaded} / {MAX_VIDEOS_PER_CATEGORY * activeSlotIds.length}</p>
               <p className="text-xs text-gray-500">arquivos carregados</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-6">
-            <UploadBox title="🎯 HOOK (Gancho)" category="hook" accentColor="border-pink-500 bg-pink-500/5 text-pink-400" description="Trecho inicial de atracao (primeiros 3s)" videos={hookVideos} onUpload={(f) => handleUpload("hook", f)} onRemove={(id) => handleRemove("hook", id)} onPlay={handlePlay} limit={MAX_VIDEOS_PER_CATEGORY} />
-            <UploadBox title="✨ DESENVOLVIMENTO / SOLUCAO" category="development" accentColor="border-cyan-500 bg-cyan-500/5 text-cyan-400" description="Trecho central com a mensagem principal" videos={devVideos} onUpload={(f) => handleUpload("development", f)} onRemove={(id) => handleRemove("development", id)} onPlay={handlePlay} limit={MAX_VIDEOS_PER_CATEGORY} />
-            <UploadBox title="📢 CTA (Final)" category="cta" accentColor="border-emerald-500 bg-emerald-500/5 text-emerald-400" description="Chamada para acao (Inscricao, compra, etc)" videos={ctaVideos} onUpload={(f) => handleUpload("cta", f)} onRemove={(id) => handleRemove("cta", id)} onPlay={handlePlay} limit={MAX_VIDEOS_PER_CATEGORY} />
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${GRID_COLS_BY_COUNT[activeSlotIds.length] || "lg:grid-cols-4"} gap-4 my-6`}>
+            {BULK_MODALITIES_CONFIG[structureMode].map((slot) => (
+              <UploadBox
+                key={slot.id}
+                title={slot.title}
+                category={slot.id}
+                accentColor={SLOT_STYLE[slot.id].accentColor}
+                description={SLOT_STYLE[slot.id].description}
+                videos={getSlotVideos(slot.id)}
+                onUpload={(f) => handleUpload(slot.id, f)}
+                onRemove={(id) => handleRemove(slot.id, id)}
+                onPlay={handlePlay}
+                limit={MAX_VIDEOS_PER_CATEGORY}
+              />
+            ))}
           </div>
 
           <div className="bg-[#1c1c28] border border-gray-800 rounded-2xl p-6 mt-6">
@@ -923,9 +1115,7 @@ export default function MassProductionPage() {
                   <span key={col.key} className="flex items-center gap-2">
                     {i > 0 && <span className="text-gray-500">×</span>}
                     <span className={`px-4 py-2 rounded-xl border ${
-                      col.key === "hook" ? "bg-pink-500/10 text-pink-400 border-pink-500/20" :
-                      col.key === "development" ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" :
-                      "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      SLOT_CHIP_COLOR[col.key as TagType]
                     }`}>{col.count} {col.label}</span>
                   </span>
                 ))}
@@ -1143,15 +1333,18 @@ export default function MassProductionPage() {
 
           {/* Tab 2: Used Media */}
           {resultsTab === "media" && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[
-                { title: "🎯 Hooks", videos: hookVideos, color: "pink", category: "hook" as TagType },
-                { title: "✨ Desenvolvimentos", videos: devVideos, color: "cyan", category: "development" as TagType },
-                { title: "📢 CTAs", videos: ctaVideos, color: "emerald", category: "cta" as TagType },
-              ].map((section) => (
-                <div key={section.category} className={`bg-[#1c1c28] border border-${section.color}-500/20 rounded-xl overflow-hidden`}>
-                  <div className={`p-4 border-b border-gray-800 bg-${section.color}-500/5`}>
-                    <h3 className={`font-bold text-${section.color}-400`}>{section.title} ({section.videos.length})</h3>
+            <div className={`grid grid-cols-1 md:grid-cols-2 ${GRID_COLS_BY_COUNT[activeSlotIds.length] || "lg:grid-cols-4"} gap-4`}>
+              {BULK_MODALITIES_CONFIG[structureMode]
+                .map((slot) => ({
+                  title: slot.title,
+                  videos: getSlotVideos(slot.id),
+                  accent: SLOT_STYLE[slot.id].accentColor,
+                  category: slot.id as TagType,
+                }))
+                .map((section) => (
+                <div key={section.category} className="bg-[#1c1c28] border border-gray-800 rounded-xl overflow-hidden">
+                  <div className={`p-4 border-b border-gray-800 ${section.accent}`}>
+                    <h3 className="font-bold">{section.title} ({section.videos.length})</h3>
                   </div>
                   <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto">
                     {section.videos.map((video) => (

@@ -7,8 +7,11 @@ export interface SavedScriptVariation {
   angleName: string;
   headline: string;
   hook: string;
+  painOrDesire: string;
+  solution: string;
   development: string;
   cta: string;
+  seoCaption: string;
   fullCaption: string;
   sceneDirection: string;
   bRollSuggestions: string[];
@@ -85,7 +88,10 @@ export function variationToSaved(
     angleName?: string;
     headline: string;
     hook: string;
+    painOrDesire?: string;
+    solution?: string;
     development?: string;
+    seoCaption?: string;
     dor?: string;
     desejo?: string;
     cta: string;
@@ -97,19 +103,37 @@ export function variationToSaved(
   },
   index: number
 ): SavedScriptVariation {
+  const painOrDesire =
+    v.painOrDesire || v.dor || "";
+  const solution =
+    v.solution || v.desejo || "";
   const development =
-    v.development || [v.dor, v.desejo].filter(Boolean).join("\n\n");
+    v.development ||
+    [painOrDesire, solution].filter(Boolean).join("\n\n");
   const sceneDirection = String(v.scene_direction || v.sceneDirection || "");
   const bRolls = v.bRollSuggestions || v.brolls || [];
+
+  const seoCaption =
+    (v.seoCaption && v.seoCaption.trim().length > 0
+      ? v.seoCaption
+      : [v.hook, painOrDesire, solution, v.cta].filter(Boolean).join("\n\n")) || "";
 
   return {
     id: v.id || `var-${Date.now()}-${index}`,
     angleName: v.angleName || "Roteiro",
     headline: v.headline || "",
     hook: v.hook || "",
+    painOrDesire,
+    solution,
     development,
     cta: v.cta || "",
-    fullCaption: [v.hook, development, v.cta].filter(Boolean).join("\n\n"),
+    seoCaption,
+    fullCaption:
+      (seoCaption +
+        (v.hashtags && v.hashtags.length > 0
+          ? "\n\n" + v.hashtags.map((t) => "#" + t).join(" ")
+          : "")) ||
+      "",
     sceneDirection,
     bRollSuggestions: bRolls,
     hashtags: v.hashtags || [],
@@ -120,9 +144,12 @@ export function savedVariationToVariation(v: SavedScriptVariation): Variation {
   return {
     headline: v.headline || "",
     hook: v.hook || "",
+    painOrDesire: v.painOrDesire || "",
+    solution: v.solution || "",
     development: v.development || "",
     cta: v.cta || "",
-    caption: v.fullCaption || "",
+    caption: v.seoCaption || v.fullCaption || "",
+    seoCaption: v.seoCaption || "",
     hashtags: v.hashtags || [],
     scene_direction:
       v.sceneDirection || "Gravar olhando direto para a camera, tom energetico e natural.",

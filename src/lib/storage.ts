@@ -11,6 +11,8 @@ interface StoredVideo {
   id: string;
   variationId: number;
   hookName: string;
+  painName?: string;
+  solutionName?: string;
   bodyName: string;
   ctaName: string;
   blob: Blob;

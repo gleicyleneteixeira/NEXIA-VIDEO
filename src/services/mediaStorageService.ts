@@ -17,10 +17,14 @@ const GALLERY_KEY = "@nexia_gallery_videos_v1";
 export interface GalleryMediaItem {
   id: string;
   name: string;
-  hookIndex: number;
-  devIndex: number;
-  ctaIndex: number;
+  hookIndex?: number;
+  painIndex?: number;
+  solutionIndex?: number;
+  devIndex?: number;
+  ctaIndex?: number;
   hookBlob?: Blob;
+  painBlob?: Blob;
+  solutionBlob?: Blob;
   devBlob?: Blob;
   ctaBlob?: Blob;
   videoBlob?: Blob;
@@ -66,9 +70,13 @@ export const GalleryStorageService = {
       id: existingForSupabase?.id || item.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: item.name,
       hookIndex: item.hookIndex,
-      devIndex: item.devIndex,
+      painIndex: item.painIndex ?? existingForSupabase?.painIndex,
+      solutionIndex: item.solutionIndex ?? existingForSupabase?.solutionIndex,
+      devIndex: item.devIndex ?? existingForSupabase?.devIndex,
       ctaIndex: item.ctaIndex,
       hookBlob: item.hookBlob ?? existingForSupabase?.hookBlob,
+      painBlob: item.painBlob ?? existingForSupabase?.painBlob,
+      solutionBlob: item.solutionBlob ?? existingForSupabase?.solutionBlob,
       devBlob: item.devBlob ?? existingForSupabase?.devBlob,
       ctaBlob: item.ctaBlob ?? existingForSupabase?.ctaBlob,
       videoBlob: item.videoBlob ?? existingForSupabase?.videoBlob,
@@ -89,9 +97,13 @@ export const GalleryStorageService = {
       id: item.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: item.name,
       hookIndex: item.hookIndex,
+      painIndex: item.painIndex,
+      solutionIndex: item.solutionIndex,
       devIndex: item.devIndex,
       ctaIndex: item.ctaIndex,
       hookBlob: item.hookBlob,
+      painBlob: item.painBlob,
+      solutionBlob: item.solutionBlob,
       devBlob: item.devBlob,
       ctaBlob: item.ctaBlob,
       videoBlob: item.videoBlob,

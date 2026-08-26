@@ -15,24 +15,44 @@ DIRETRIZES DE CRIACAO:
    - Se o input for longo e com contrastes (ex: SP acha facil vs MG reprova), extraia o motivo real e use essa historia dentro do roteiro.
    - Se o input for uma unica palavra vaga (ex: "FGTS", "unhas", "advocacia"), crie um contexto completo de dor, desejo e solucao para aquele nicho.
    - NUNCA corte o input no meio e nunca resuma ao ponto de perder o sentido. Todo texto do briefing deve ser considerado.
-2. ESTRUTURA DOS 3 ATOS (cada objeto do array = 1 video):
-   - HOOK (Gancho - Primeiros 3s): Uma unica pergunta cortante, quebra de mito ou choque de curiosidade. NUNCA comece todos os roteiros com "Vem ca". Varie os estilos de gancho entre os videos.
-   - DESENVOLVIMENTO (Dor + Solucao integradas): Paragrafo fluido e conversacional conectando o problema real e a saida pratica/metodo/produto. Sem cortes no meio da frase, com excelente portugues falado e concordancia perfeita.
-   - CTA (Chamada): Direta, com urgencia, oferta relampago, escassez ou comando claro.
-3. FORMATO DE SAIDA (ESTRITAMENTE JSON):
-   Retorne APENAS um array JSON valido, sem crases (json), sem texto antes ou depois.
-   Exemplo de cada objeto:
-   {
-     "angleName": "Nome do Angulo",
-     "headline": "Titulo do Video",
-     "hook": "Texto do Gancho",
-     "development": "Texto do Desenvolvimento completo",
-     "cta": "Texto da CTA",
-     "sceneDirection": "Direcao para o criador gravar",
-     "bRollSuggestions": ["broll 1", "broll 2", "broll 3"],
-     "hashtags": ["tag1", "tag2", "tag3"]
-   }
-   Cada roteiro DEVE ser completo e falavel em voz alta.
+ 2. ESTRUTURA DOS 4 BLOCOS MODULARES (cada objeto do array = 1 video):
+    Gere 4 blocos TOTALMENTE INDEPENDENTES. O usuario vai combinar QUALQUER
+    variacao do Slot 1 com QUALQUER variacao do Slot 2, Slot 3 e Slot 4
+    (ex: 5x5x5x5 = 625 combinacoes), sem travas gramaticais. Por isso,
+    NENHUM bloco pode depender de outro para fazer sentido.
+    - SLOT 1 - HOOK (Gancho - Primeiros 3s): Uma unica pergunta cortante, quebra de mito ou choque de curiosidade. Frase 100% finalizada gramaticalmente. PROIBIDO terminar com pontuacao suspensa, conjuncoes ou conectores abertos ("porque...", "e o motivo e...", "mas...").
+    - SLOT 2 - DOR / DESEJO / DUVIDA: Inicie de forma autonoma e contextualizada, nomeando claramente o problema com substantivos proprios. PROIBIDO usar pronomes que referenciem a ultima palavra do gancho ("Isso acontece...", "Esse problema...", "Como vimos antes...").
+    - SLOT 3 - SOLUCAO: Apresente o metodo, produto ou virada de chave de forma limpa e independente de qual Dor foi dita. Frase completa e autonoma.
+    - SLOT 4 - CTA (Chamada): Comando direto e independente de acao imediata. Sem depender de informacao especifica da Solucao.
+ 3. DURACAO E EXTENSAO (REGRAS CRITICAS DE TAMANHO):
+    O briefing informara a DURACAO ALVO (15s, 30s, 60s ou 90s). Essa duracao
+    DEFINE A EXTENSAO EXATA de CADA bloco. Considere velocidade media de fala
+    humana de 2,5 palavras por segundo.
+    - NAO entregue texto raso se o usuario selecionou 60s ou 90s. Desenvolva o
+      tema com exemplos, argumentos e detalhes praticos nos blocos de Dor/Desejo
+      e Solucao para bater a meta de palavras da duracao escolhida.
+    - Cada bloco (Gancho, Dor/Desejo/Duvida, Solucao, CTA) DEVE respeitar a faixa
+      de palavras exigida para a duracao. Se a duracao for 15s, seja ultra-curto;
+      se for 90s, seja denso e completo. O usuario prompt traz a meta exata por bloco.
+    - A soma das palavras dos 4 blocos deve ficar DENTRO da meta total da duracao.
+ 4. FORMATO DE SAIDA (ESTRITAMENTE JSON):
+    Retorne APENAS um array JSON valido, sem crases (json), sem texto antes ou depois.
+    Exemplo de cada objeto:
+    {
+      "angleName": "Nome do Angulo",
+      "headline": "Titulo do Video",
+      "hook": "Texto do Gancho (Slot 1)",
+      "painOrDesire": "Texto da Dor/Desejo/Duvida (Slot 2)",
+      "solution": "Texto da Solucao (Slot 3)",
+      "cta": "Texto da CTA (Slot 4)",
+      "seoCaption": "Legenda completa e otimizada para SEO (com emojis, explicacao e CTA) pronta para copiar e colar",
+      "sceneDirection": "Direcao para o criador gravar",
+      "bRollSuggestions": ["broll 1", "broll 2", "broll 3"],
+      "hashtags": ["tag1", "tag2", "tag3"]
+    }
+    Cada roteiro DEVE ser completo e falavel em voz alta. O campo "seoCaption" e OBRIGATORIO:
+    deve ser a legenda final pronta para Instagram/TikTok/YouTube, reunindo os 4 blocos de forma
+    coesa, com emojis, explicacao e o CTA, SEM as hashtags (estas vao no campo "hashtags" separado).
 
 IDIOMA E HASHTAGS:
 - TODO o conteudo retornado DEVE ser em PORTUGUES BRASILEIRO. NUNCA gere texto em outro idioma.
@@ -42,32 +62,38 @@ IDIOMA E HASHTAGS:
 - As hashtags DEVEM refletir o Tema/Ideia Central do roteiro.
 
 REGRAS DE MODULARIDADE (CRITICO):
-O usuario podera combinar QUALQUER Gancho + QUALQUER Desenvolvimento + QUALQUER CTA.
-Portanto, as 27 combinacoes possiveis (3x3x3) devem produzir roteiros coerentes, naturais e completos.
+O usuario podera combinar QUALQUER Gancho (Slot 1) + QUALQUER Dor/Desejo/Duvida (Slot 2) + QUALQUER Solucao (Slot 3) + QUALQUER CTA (Slot 4).
+Portanto, TODAS as combinacoes possiveis devem produzir roteiros coerentes, naturais e completos, sem travas gramaticais.
 
 CADA BLOCO DEVE:
 - Extrair contexto EXCLUSIVAMENTE do Tema/Ideia Central
 - Ser semanticamente independente dos outros blocos
 - Apresentar claramente seu proprio contexto (assunto, problema, solucao)
-- Funcionar perfeitamente depois de QUALQUER Gancho
-- Funcionar perfeitamente antes de QUALQUER CTA
+- Funcionar perfeitamente depois de QUALQUER bloco anterior
+- Funcionar perfeitamente antes de QUALQUER bloco posterior
 - Usar substantivos explicitos em vez de pronomes sem antecedente proprio
 
-CADA GANCHO DEVE:
+CADA GANCHO (Slot 1) DEVE:
 - Ser uma frase completa ou pergunta completa
 - Apresentar claramente o assunto
 - Nao terminar com reticencias ou conectivos abertos ("porque", "e", "mas")
 - Nao depender de continuacao
 
-CADA DESENVOLVIMENTO DEVE:
-- Apresentar claramente o assunto no inicio (nao comecar com "Isso", "Essa tecnica", "Ele", "Um deles")
-- Estabelecer seu proprio contexto sem pressupor leitura previa
-- Nao responder diretamente a apenas um dos Ganchos
+CADA DOR/DESEJO/DUVIDA (Slot 2) DEVE:
+- Iniciar de forma autonoma e contextualizada, nomeando o problema com substantivos proprios
+- NUNCA comecar com "Isso", "Esse problema", "Como vimos", "Ele", "Um deles"
+- Estabelecer seu proprio contexto sem pressupor leitura previa do Gancho
+- Terminar de forma que QUALQUER Solucao possa ser colocada depois
+
+CADA SOLUCAO (Slot 3) DEVE:
+- Apresentar o metodo/produto/virada de forma limpa e independente
+- Nao comecar com "Isso", "Como falamos", "Pensando nisso"
+- Nao responder diretamente a apenas uma Dor especifica
 - Terminar de forma que QUALQUER CTA possa ser colocado depois
 
-CADA CTA DEVE:
+CADA CTA (Slot 4) DEVE:
 - Ser direto e independente
-- Nao depender de informacao especifica do Desenvolvimento
+- Nao depender de informacao especifica da Solucao
 - Nao usar construcoes como "Agora que voce aprendeu...", "Depois de conhecer...", "Se voce quer treinar..."
 - Funcionar com qualquer combinacao anterior
 
@@ -77,12 +103,12 @@ PROIBIDO EM QUALQUER BLOCO:
 - Continuar frase iniciada em outro bloco
 - Depender de personagem, objeto ou situacao apresentada em outro bloco
 - Terminar Ganchos com reticencias ou conectivos abertos
-- Terminar Desenvolvimentos com frases que preparem um CTA especifico
+- Terminar Dor/Solucao com frases que preparem uma transicao especifica
 
 VALIDACAO INTERNA:
-Apos gerar os blocos, teste mentalmente todas as 27 combinacoes (G1-D1-C1, G1-D1-C2, ..., G3-D3-C3).
+Apos gerar os blocos, teste mentalmente combinacoes cruzadas (ex: Hook 1 + Dor 3 + Solucao 2 + CTA 5).
 Se qualquer combinacao falhar por contexto ausente, referencia sem antecedente, continuidade artificial ou mudanca brusca de assunto, reescreva o bloco responsavel.
-O criterio final: "Qualquer combinacao G+D+C parece ter sido escrita especificamente para aquela combinacao?" Se NAO, reescrever.`;
+O criterio final: "Qualquer combinacao dos 4 slots parece ter sido escrita especificamente para aquela combinacao?" Se NAO, reescrever.`;
 
 const RECOMMENDED_FREE_MODELS = [
   "google/gemini-2.5-flash:free",
@@ -101,6 +127,54 @@ const PAID_FALLBACK_MODELS = [
 ];
 
 const DEFAULT_MODEL = "google/gemini-2.5-flash:free";
+
+function buildDurationInstruction(duration: string): string {
+  const d = (duration || "30s").trim();
+  const header = `O usuario selecionou a DURACAO ALVO de: ${d}.
+Sua missao e GERAR UM CONTEUDO COM A EXTENSAO EXATA PARA PREENCHER ESSE TEMPO.
+Considere a velocidade media de fala humana de 2,5 palavras por segundo.
+Nao entregue um texto raso se o usuario selecionou 60s ou 90s. Desenvolva o tema com exemplos, argumentos e detalhes praticos no bloco de Dor/Desejo/Duvida e no de Solucao para bater a meta de palavras da duracao escolhida.`;
+
+  switch (d) {
+    case "15s":
+      return (
+        header +
+        `
+META TOTAL: video dinamico de 35 a 45 palavras.
+- SLOT 1 (Gancho): 1 frase direta (7-10 palavras).
+- SLOT 2 (Dor/Desejo/Duvida) + SLOT 3 (Solucao): explicativo ultra-curto (20-25 palavras).
+- SLOT 4 (CTA): chamada de 1 linha (8-10 palavras).`
+      );
+    case "60s":
+      return (
+        header +
+        `
+META TOTAL: conteudo denso e explicativo de 140 a 170 palavras.
+- SLOT 1 (Gancho): historia rapida ou quebra de padrao bem trabalhada (20-25 palavras).
+- SLOT 2 (Dor/Desejo/Duvida) + SLOT 3 (Solucao): desenvolvimento aprofundado com exemplos praticos, motivo real do erro e passo a passo da solucao (100-120 palavras).
+- SLOT 4 (CTA): fechamento persuasivo (20 palavras).`
+      );
+    case "90s":
+      return (
+        header +
+        `
+META TOTAL: aula/masterclass de 210 a 250 palavras.
+- SLOT 1 (Gancho): introducao envolvente e contextualizada (25-30 palavras).
+- SLOT 2 (Dor/Desejo/Duvida) + SLOT 3 (Solucao): analise detalhada, exemplos de aplicacao, estudo de caso ou explicacao minuciosa de gatilhos (160-180 palavras).
+- SLOT 4 (CTA): convite estruturado com oferta/escassez (25-30 palavras).`
+      );
+    case "30s":
+    default:
+      return (
+        header +
+        `
+META TOTAL: video padrao Reels de 70 a 90 palavras.
+- SLOT 1 (Gancho): pergunta ou afirmacao forte (12-15 palavras).
+- SLOT 2 (Dor/Desejo/Duvida) + SLOT 3 (Solucao): explicacao contextualizada em 2 ou 3 frases (45-55 palavras).
+- SLOT 4 (CTA): chamada de acao completa com beneficio (12-15 palavras).`
+      );
+  }
+}
 
 function buildUserPrompt(params: {
   topic: string;
@@ -126,6 +200,7 @@ function buildUserPrompt(params: {
   else if (objectives.length > 1)
     lines.push("OBJETIVOS (distribua entre os videos, 1 por roteiro): " + objectives.join(", "));
   lines.push("DURACAO: " + (params.duration || "30s"));
+  lines.push(buildDurationInstruction(params.duration || "30s"));
   lines.push("QUANTIDADE DE ROTEIROS: " + params.count);
   if (hasMultiple) {
     lines.push(
@@ -134,9 +209,9 @@ function buildUserPrompt(params: {
   }
   lines.push(
     "CONTRATO DE CONTEXTO GLOBAL: O Tema/Ideia Central abaixo e a UNICA fonte de contexto. " +
-    "Todos os blocos (Gancho, Desenvolvimento, CTA) devem extrair contexto EXCLUSIVAMENTE deste Tema. " +
-    "Nenhum bloco pode depender de outro bloco. Os 3 Ganchos, 3 Desenvolvimentos e 3 CTAs devem ser " +
-    "totalmente independentes e intercambiaveis. Qualquer combinacao G+D+C deve parecer ter sido " +
+    "Todos os blocos (Gancho, Dor/Desejo/Duvida, Solucao, CTA) devem extrair contexto EXCLUSIVAMENTE deste Tema. " +
+    "Nenhum bloco pode depender de outro bloco. Os 4 slots (hook, painOrDesire, solution, cta) devem ser " +
+    "totalmente independentes e intercambiaveis. Qualquer combinacao dos 4 slots deve parecer ter sido " +
     "escrita especificamente para aquela combinacao."
   );
   lines.push(
@@ -185,7 +260,8 @@ function validateBlockIndependence(
 
   variations.forEach((v, idx) => {
     const hook = String(v.hook || "").trim();
-    const dev = String(v.development || "").trim();
+    const pain = String(v.painOrDesire || "").trim();
+    const solution = String(v.solution || "").trim();
     const cta = String(v.cta || "").trim();
 
     if (HOOK_ENDINGS.test(hook)) {
@@ -194,14 +270,25 @@ function validateBlockIndependence(
       );
     }
 
-    if (PROHIBITED_DEV_STARTS.some((re) => re.test(dev))) {
+    if (PROHIBITED_DEV_STARTS.some((re) => re.test(pain))) {
       warnings.push(
-        `Variacao ${idx + 1}: Desenvolvimento comeca com construcao proibida (dependencia com Gancho)`
+        `Variacao ${idx + 1}: Dor/Desejo/Duvida comeca com construcao proibida (dependencia com Gancho)`
       );
     }
-    if (DEV_ANSWERS_HOOK.test(dev)) {
+    if (DEV_ANSWERS_HOOK.test(pain)) {
       warnings.push(
-        `Variacao ${idx + 1}: Desenvolvimento parece responder a um Gancho especifico`
+        `Variacao ${idx + 1}: Dor/Desejo/Duvida parece responder a um Gancho especifico`
+      );
+    }
+
+    if (PROHIBITED_DEV_STARTS.some((re) => re.test(solution))) {
+      warnings.push(
+        `Variacao ${idx + 1}: Solucao comeca com construcao proibida (dependencia com bloco anterior)`
+      );
+    }
+    if (DEV_ANSWERS_HOOK.test(solution)) {
+      warnings.push(
+        `Variacao ${idx + 1}: Solucao parece responder a um Gancho/Dor especifico`
       );
     }
 
@@ -325,9 +412,11 @@ function parseJsonResponse(content: string): Record<string, unknown>[] | null {
 function normalizeVariation(v: Record<string, unknown>): Record<string, unknown> {
   const obj = { ...v };
 
-  if (!obj.development && (obj.dor || obj.desejo)) {
-    obj.development = [obj.dor, obj.desejo].filter(Boolean).join("\n\n");
-  }
+  const painOrDesire = obj.painOrDesire || obj.dor;
+  const solution = obj.solution || obj.desejo;
+  const development =
+    obj.development ||
+    [painOrDesire, solution].filter(Boolean).join("\n\n");
 
   const sceneDirection = obj.sceneDirection || obj.scene_direction;
   const bRolls = obj.bRollSuggestions || obj.brolls;
@@ -343,8 +432,20 @@ function normalizeVariation(v: Record<string, unknown>): Record<string, unknown>
   obj.angleName = (obj.angleName as string) || "Roteiro Viral";
   obj.headline = (obj.headline as string) || "";
   obj.hook = (obj.hook as string) || "";
-  obj.development = (obj.development as string) || "";
+  obj.painOrDesire = (painOrDesire as string) || "";
+  obj.solution = (solution as string) || "";
+  obj.development = (development as string) || "";
   obj.cta = (obj.cta as string) || "";
+
+  const fullBlocks = [obj.hook, obj.painOrDesire, obj.solution, obj.cta]
+    .filter(Boolean)
+    .join("\n\n");
+  const seoCaption =
+    (obj.seoCaption as string) && String(obj.seoCaption).trim().length > 0
+      ? String(obj.seoCaption)
+      : fullBlocks;
+  obj.seoCaption = seoCaption;
+  obj.caption = seoCaption;
   obj.sceneDirection = (obj.sceneDirection as string) ||
     "Gravar olhando direto para a camera, tom energetico e natural.";
   obj.scene_direction = obj.sceneDirection;

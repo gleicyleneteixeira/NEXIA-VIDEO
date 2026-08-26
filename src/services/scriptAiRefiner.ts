@@ -13,7 +13,8 @@ import { AiKeyService } from "@/services/aiKeyService";
 export interface RefinableScript {
   headline: string;
   hook: string;
-  development: string;
+  painOrDesire: string;
+  solution: string;
   cta: string;
 }
 
@@ -25,7 +26,7 @@ export interface AiRefinerCredentials {
 }
 
 export const DEFAULT_AI_REFINER_INSTRUCTION =
-  "Reescreva mantendo a estrutura de 3 blocos (Gancho, Desenvolvimento [Dor + Solucao integradas], CTA). Use tom coloquial de conversa de live/Stories, frases curtas faceis de falar em voz alta, gancho inicial em forma de pergunta cortante e gatilhos de urgencia/oferta relampago no CTA.";
+  "Reescreva mantendo a estrutura de 4 blocos modulares e independentes (Gancho, Dor/Desejo/Duvida, Solucao, CTA). Cada bloco deve ser autonomo, sem depender de outro para fazer sentido. Use tom coloquial de conversa de live/Stories, frases curtas faceis de falar em voz alta, gancho inicial em forma de pergunta cortante e gatilhos de urgencia/oferta relampago no CTA.";
 
 export async function refineSingleVariationWithAi(
   currentScript: RefinableScript,
@@ -41,7 +42,8 @@ export async function refineSingleVariationWithAi(
       currentScript: {
         headline: currentScript.headline,
         hook: currentScript.hook,
-        development: currentScript.development,
+        painOrDesire: currentScript.painOrDesire,
+        solution: currentScript.solution,
         cta: currentScript.cta,
       },
       instructions: credentials?.customInstructions || DEFAULT_AI_REFINER_INSTRUCTION,
