@@ -1222,6 +1222,29 @@ export default function Preview() {
     return () => observer.disconnect();
   }, []);
 
+  // Auto-pausa ao trocar de aba / minimizar a janela (Page Visibility API).
+  // Pausa a reprodução global (store) cuando a página fica oculta.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        usePlaybackStore.getState().pause();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  // Auto-pausa ao desmontar a tela (navegar para outro módulo do app).
+  // Garante que o <video> e a store parem ao sair do editor.
+  useEffect(() => {
+    return () => {
+      if (primaryVideoRef.current) primaryVideoRef.current.pause();
+      usePlaybackStore.getState().pause();
+    };
+  }, []);
+
   const { project, setKeyframe, updateItem, setCanvas, setChromaKey } = useProjectStore();
   const { isPlaying, currentTime, setCurrentTime, seekTo, volume, isMuted, setVolume, toggleMute } = usePlaybackStore();
   const { selectedIds, clearSelection, select } = useUIStore();

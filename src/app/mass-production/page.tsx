@@ -188,6 +188,19 @@ function GalleryVideoPlayer({ video, aspectClass }: { video: RenderedVideo; aspe
   const [url, setUrl] = useState(() =>
     video.blob instanceof Blob ? getObjectUrl(video.blob) : video.blobUrl || ""
   );
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Auto-pausa: ao trocar de aba/minimizar E ao desmontar o card de preview.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && videoRef.current) videoRef.current.pause();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (videoRef.current) videoRef.current.pause();
+    };
+  }, []);
 
   if (!url && video.thumbUrl) {
     return (
@@ -209,6 +222,7 @@ function GalleryVideoPlayer({ video, aspectClass }: { video: RenderedVideo; aspe
 
   return (
     <video
+      ref={videoRef}
       src={url}
       controls
       className={`w-full ${aspectClass} rounded-lg bg-black object-cover`}
