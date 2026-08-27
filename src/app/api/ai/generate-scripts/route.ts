@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { buildRemodelPrompt } from "@/services/aiScriptEngine";
 
 const SYSTEM_INSTRUCTION = `Voce e o Diretor de Copywriting do SaaS NEXIA VIDEO.
 Sua unica funcao e receber o input do usuario (mesmo que seja uma ideia vaga, um desabafo desorganizado, sem pontuacao ou um texto longo) e criar roteiros virais e persuasivos para Reels/TikTok/Shorts.
@@ -108,7 +109,22 @@ PROIBIDO EM QUALQUER BLOCO:
 VALIDACAO INTERNA:
 Apos gerar os blocos, teste mentalmente combinacoes cruzadas (ex: Hook 1 + Dor 3 + Solucao 2 + CTA 5).
 Se qualquer combinacao falhar por contexto ausente, referencia sem antecedente, continuidade artificial ou mudanca brusca de assunto, reescreva o bloco responsavel.
-O criterio final: "Qualquer combinacao dos 4 slots parece ter sido escrita especificamente para aquela combinacao?" Se NAO, reescrever.`;
+O criterio final: "Qualquer combinacao dos 4 slots parece ter sido escrita especificamente para aquela combinacao?" Se NAO, reescrever.
+
+COESAO REGIONAL E CONTEXTUAL (SLOT 1 vs SLOT 2/3) - REGRA CRITICA:
+O usuario vai combinar QUALQUER Gancho (Slot 1) com QUALQUER Dor (Slot 2) e Solucao (Slot 3).
+Por isso, e PROIBIDO travar o nome de um estado, cidade ou localidade especifica dentro do
+SLOT 2 (Dor/Desejo/Duvida) ou do SLOT 3 (Solucao), A MENOS QUE TODOS os Ganchos (Slot 1) do
+lote se refiram a essa MESMA regiao.
+- Se o lote tiver Ganchos de regioes diferentes (ex: um fala "Sao Paulo" e outro "Minas Gerais"),
+  OBRIGATORIAMENTE mantenha SLOT 2 e SLOT 3 neutros, usando termos universais como:
+  "a banca da sua regiao", "o Detran do seu estado", "os exames teoricos locais",
+  "o orgao responsavel pela sua cidade", "a legislacao do seu municipio".
+- Ganchos de contraste/estatistica (ex: "apenas 30%") devem ser seguidos por um SLOT 2 formulado
+  para acolher TANTO estatisticas altas QUANTO baixas (ex: "Mesmo com esses numeros, a verdade e
+  que muita gente continua reprovando por..."). Nunca amarre a Dor a um numero especifico do Gancho.
+- VALIDACAO DE COESAO: o SLOT 2 NAO pode contradizer a premissa levantada no SLOT 1. Se o Gancho
+  cita uma regiao/estatistica, a Dor deve ser compativel, sem citar outra regiao conflitante.`;
 
 const RECOMMENDED_FREE_MODELS = [
   "google/gemini-2.5-flash:free",
@@ -215,6 +231,11 @@ function buildUserPrompt(params: {
     "escrita especificamente para aquela combinacao."
   );
   lines.push(
+    "COESAO REGIONAL: se algum Gancho (Slot 1) citar uma regiao/estado/cidade, mantenha a Dor (Slot 2) e a " +
+    "Solucao (Slot 3) NEUTRAS (ex: 'o Detran do seu estado', 'a banca da sua regiao'), A MENOS QUE TODOS os " +
+    "Ganchos do lote sejam da mesma regiao. Nunca contradiga a regiao citada no Gancho."
+  );
+  lines.push(
     "INPUT / BRIEFING BRUTO DO USUARIO (use TODO o texto, sem resumir):\n\"\"\"\n" +
       params.topic +
       "\n\"\"\""
@@ -300,6 +321,76 @@ function validateBlockIndependence(
   });
 
   return { valid: warnings.length === 0, warnings };
+}
+
+// ---- Validação automática de coesão regional/contextual (Slot 1 vs Slot 2/3) ----
+
+const REGION_KEYWORDS: string[] = [
+  // estados (sem acento, minusculo)
+  "acre", "alagoas", "amapa", "amazonas", "bahia", "ceara", "distrito federal",
+  "espirito santo", "goias", "maranhao", "mato grosso do sul", "mato grosso",
+  "minas gerais", "paraiba", "parana", "pernambuco", "piaui", "rio de janeiro",
+  "rio grande do norte", "rio grande do sul", "rondonia", "roraima",
+  "santa catarina", "sao paulo", "sergipe", "tocantins",
+  // capitais/grandes cidades comuns
+  "belo horizonte", "brasilia", "curitiba", "fortaleza", "goiania", "manaus",
+  "belem", "porto alegre", "recife", "salvador", "sao paulo", "rio de janeiro",
+];
+
+const REGION_SET = new Set(REGION_KEYWORDS);
+
+function stripAccents(input: string): string {
+  return input.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+function findRegions(text: string): string[] {
+  if (!text) return [];
+  const t = stripAccents(text.toLowerCase());
+  const found: string[] = [];
+  for (const r of REGION_SET) {
+    const escaped = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\b${escaped}\\b`);
+    if (re.test(t)) found.push(r);
+  }
+  return found;
+}
+
+function validateRegionalCohesion(
+  variations: Record<string, unknown>[]
+): string[] {
+  const warnings: string[] = [];
+
+  const allHookRegions = new Set<string>();
+  variations.forEach((v) => {
+    findRegions(String(v.hook || "")).forEach((r) => allHookRegions.add(r));
+  });
+  const multiRegion = allHookRegions.size > 1;
+
+  variations.forEach((v, idx) => {
+    const hookRegions = findRegions(String(v.hook || ""));
+    const painSolution = String(v.painOrDesire || "") + " " + String(v.solution || "");
+    const psRegions = findRegions(painSolution);
+
+    if (psRegions.length === 0) return;
+
+    if (multiRegion) {
+      psRegions.forEach((r) =>
+        warnings.push(
+          `Variacao ${idx + 1}: Slot 2/3 cita "${r}" em lote multi-regional (deve ser NEUTRO para combinar com qualquer Gancho)`
+        )
+      );
+    } else {
+      psRegions.forEach((r) => {
+        if (!hookRegions.includes(r)) {
+          warnings.push(
+            `Variacao ${idx + 1}: Slot 2/3 cita "${r}" que NAO aparece no Gancho (Slot 1) deste video (contradiz a premissa)`
+          );
+        }
+      });
+    }
+  });
+
+  return warnings;
 }
 
 function parseJsonResponse(content: string): Record<string, unknown>[] | null {
@@ -593,10 +684,26 @@ export async function POST(request: NextRequest) {
       model,
       apiKey,
       apiKeys,
+      mode,
+      rawContent,
     } = body;
 
-    if (!topic || typeof topic !== "string" || topic.trim().length === 0) {
-      return NextResponse.json({ error: "Briefing / Tema e obrigatorio" }, { status: 400 });
+    const isRemodelMode =
+      mode === "idea" || mode === "extracted_audio" || mode === "raw_text";
+    const effectiveContent =
+      isRemodelMode && typeof rawContent === "string" && rawContent.trim()
+        ? rawContent
+        : topic;
+
+    if (
+      !effectiveContent ||
+      typeof effectiveContent !== "string" ||
+      effectiveContent.trim().length === 0
+    ) {
+      return NextResponse.json(
+        { error: "Briefing / Tema / Conteudo e obrigatorio" },
+        { status: 400 }
+      );
     }
 
     const keyList: string[] = [];
@@ -626,16 +733,26 @@ export async function POST(request: NextRequest) {
       objectiveList.push(objective);
     }
 
-    const userPrompt = buildUserPrompt({
-      topic,
-      niche: typeof niche === "string" ? niche : undefined,
-      objective,
-      objectives: objectiveList,
-      duration: duration || duracao,
-      count: quantity,
-      publicoAlvo: typeof publicoAlvo === "string" ? publicoAlvo : undefined,
-      produtoServico: typeof produtoServico === "string" ? produtoServico : undefined,
-    });
+    const userPrompt = isRemodelMode
+      ? buildRemodelPrompt({
+          mode,
+          rawContent: effectiveContent,
+          count: quantity,
+          niche: typeof niche === "string" ? niche : undefined,
+          objectives: objectiveList.length ? objectiveList : undefined,
+          publicoAlvo: typeof publicoAlvo === "string" ? publicoAlvo : undefined,
+          produtoServico: typeof produtoServico === "string" ? produtoServico : undefined,
+        })
+      : buildUserPrompt({
+          topic,
+          niche: typeof niche === "string" ? niche : undefined,
+          objective,
+          objectives: objectiveList,
+          duration: duration || duracao,
+          count: quantity,
+          publicoAlvo: typeof publicoAlvo === "string" ? publicoAlvo : undefined,
+          produtoServico: typeof produtoServico === "string" ? produtoServico : undefined,
+        });
 
     const selectedModel =
       model && model !== "google/gemma-4-26b-a4b-it:free" ? model : DEFAULT_MODEL;
@@ -668,12 +785,19 @@ export async function POST(request: NextRequest) {
       variations as unknown as Record<string, unknown>[]
     );
 
+    const cohesionWarnings = validateRegionalCohesion(
+      variations as unknown as Record<string, unknown>[]
+    );
+
     return NextResponse.json({
       success: true,
       variations,
       usedModel: result.usedModel,
       ...(modularityCheck.warnings.length > 0
         ? { _modularityWarnings: modularityCheck.warnings }
+        : {}),
+      ...(cohesionWarnings.length > 0
+        ? { _cohesionWarnings: cohesionWarnings }
         : {}),
     });
   } catch (err) {

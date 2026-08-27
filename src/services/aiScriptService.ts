@@ -13,6 +13,10 @@ export interface GenerateScriptsWithRealAIParams {
   model?: string;
   apiKey?: string;
   apiKeys?: string[];
+  /** Origem do conteúdo: 'idea' (roteiro livre) ou modo de remodelagem viral */
+  mode?: "idea" | "extracted_audio" | "raw_text";
+  /** Conteúdo bruto (transcrição/ideia) usado nos modos de remodelagem */
+  rawContent?: string;
 }
 
 export interface AIScriptVariation {
@@ -59,7 +63,10 @@ export async function generateScriptsWithRealAI(
       "Content-Type": "application/json",
       "x-ai-custom-token": AiKeyService.getToken(),
     },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      ...params,
+      rawContent: params.mode ? params.rawContent ?? params.topic : undefined,
+    }),
   });
 
   const data = await res.json().catch(() => null);

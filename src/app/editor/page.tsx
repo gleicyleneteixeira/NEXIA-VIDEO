@@ -7,7 +7,9 @@ import type { TimelineItem } from "@/lib/editor";
 import { DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_TEXT_PROPS, DEFAULT_CANVAS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, generateId, createDefaultItem, ASPECT_RATIOS } from "@/lib/editor";
 import { consumePendingPostImport } from "@/lib/editor/pendingPost";
 import { consumePendingFileImport } from "@/lib/editor/pendingFileImport";
+import { useProjectsStore, createBlankProject } from "@/lib/editor/projects-store";
 import { withHistory } from "@/lib/editor/history";
+import ProjectsModal from "@/components/editor/ProjectsModal";
 import Timeline from "@/components/editor/Timeline";
 import Preview from "@/components/editor/Preview";
 import PropertiesPanel from "@/components/editor/PropertiesPanel";
@@ -62,6 +64,7 @@ export default function EditorPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [timelineHeight, setTimelineHeight] = useState(220);
+  const [projectsOpen, setProjectsOpen] = useState(false);
 
   const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
@@ -85,73 +88,125 @@ export default function EditorPage() {
 
   const timeline = project.timeline;
 
+  const importMediaFile = useCallback((file: File, forcedDuration?: number) => {
+    const media = addFile(file, forcedDuration);
+
+    const timeline = useProjectStore.getState().project.timeline;
+    const videoTrackId = timeline.trackOrder.find(
+      (trackId) => timeline.tracks[trackId]?.kind === "video"
+    );
+    const audioTrackId = timeline.trackOrder.find(
+      (trackId) => timeline.tracks[trackId]?.kind === "audio"
+    );
+
+    const trackId = media.type === "audio" ? audioTrackId : videoTrackId;
+    if (!trackId) return;
+
+    const lastItem = timeline.items
+      .filter((item) => item.trackId === trackId)
+      .sort((a, b) => (a.startFrame + a.durationInFrames) - (b.startFrame + b.durationInFrames))
+      .pop();
+
+    const startFrame = lastItem ? lastItem.startFrame + lastItem.durationInFrames : 0;
+    const duration = media.duration ? Math.ceil(media.duration * timeline.fps) : timeline.fps * 5;
+
+    const item: TimelineItem = {
+      id: generateId(),
+      trackId,
+      startFrame,
+      durationInFrames: duration,
+      name: media.name,
+      kind: media.type === "image" ? "image" : media.type,
+      src: media.url,
+      file: media.file,
+      mediaId: media.id,
+      srcInFrame: 0,
+      srcOutFrame: duration,
+      transform: { ...DEFAULT_TRANSFORM },
+      filters: { ...DEFAULT_FILTERS },
+      crop: { enabled: false, top: 0, right: 0, bottom: 0, left: 0 },
+      mask: { enabled: false, shape: "circle", x: 50, y: 50, width: 80, height: 80, rotation: 0, feather: 0, invert: false },
+      chromaKey: { ...DEFAULT_CHROMA_KEY },
+      blendMode: "normal",
+      speed: { rate: 1, reverse: false, freezeFrame: null, curve: [] },
+      animation: { enter: "none", exit: "none", durationInFrames: 15 },
+      audio: { fade: { in: "none", inDuration: 0, out: "none", outDuration: 0 }, voiceEffect: "none", eqPreset: "none", denoise: false },
+      effects: [],
+      hsl: {},
+      filterPreset: "none",
+      keyframes: {},
+    };
+
+    addItem(item);
+  }, [addFile, addItem]);
+
   const handleMediaImport = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
     if (detail?.files) {
-      Array.from(detail.files as File[]).forEach((file) => {
-        const media = addFile(file);
-
-        const videoTrackId = timeline.trackOrder.find(
-          (trackId) => timeline.tracks[trackId]?.kind === "video"
-        );
-        const audioTrackId = timeline.trackOrder.find(
-          (trackId) => timeline.tracks[trackId]?.kind === "audio"
-        );
-
-        const trackId = media.type === "audio" ? audioTrackId : videoTrackId;
-        if (!trackId) return;
-
-        const lastItem = timeline.items
-          .filter((item) => item.trackId === trackId)
-          .sort((a, b) => (a.startFrame + a.durationInFrames) - (b.startFrame + b.durationInFrames))
-          .pop();
-
-        const startFrame = lastItem ? lastItem.startFrame + lastItem.durationInFrames : 0;
-        const duration = media.duration ? Math.ceil(media.duration * timeline.fps) : timeline.fps * 5;
-
-        const item: TimelineItem = {
-          id: generateId(),
-          trackId,
-          startFrame,
-          durationInFrames: duration,
-          name: media.name,
-          kind: media.type === "image" ? "image" : media.type,
-          src: media.url,
-          file: media.file,
-          mediaId: media.id,
-          srcInFrame: 0,
-          srcOutFrame: duration,
-          transform: { ...DEFAULT_TRANSFORM },
-          filters: { ...DEFAULT_FILTERS },
-          crop: { enabled: false, top: 0, right: 0, bottom: 0, left: 0 },
-          mask: { enabled: false, shape: "circle", x: 50, y: 50, width: 80, height: 80, rotation: 0, feather: 0, invert: false },
-          chromaKey: { ...DEFAULT_CHROMA_KEY },
-          blendMode: "normal",
-          speed: { rate: 1, reverse: false, freezeFrame: null, curve: [] },
-          animation: { enter: "none", exit: "none", durationInFrames: 15 },
-          audio: { fade: { in: "none", inDuration: 0, out: "none", outDuration: 0 }, voiceEffect: "none", eqPreset: "none", denoise: false },
-          effects: [],
-          hsl: {},
-          filterPreset: "none",
-          keyframes: {},
-        };
-
-        addItem(item);
-      });
+      (detail.files as File[]).forEach((file) => importMediaFile(file));
     }
-  }, [addFile, addItem, timeline]);
+  }, [importMediaFile]);
 
   useEffect(() => {
     window.addEventListener("editor-media-import", handleMediaImport);
     return () => window.removeEventListener("editor-media-import", handleMediaImport);
   }, [handleMediaImport]);
 
+  // Captura um frame do primeiro clipe de vídeo para usar de capa do rascunho.
+  const captureProjectThumbnail = useCallback(async (src: string): Promise<string | undefined> => {
+    try {
+      const video = document.createElement("video");
+      video.src = src;
+      video.muted = true;
+      video.crossOrigin = "anonymous";
+      await new Promise<void>((res, rej) => {
+        video.onloadeddata = () => res();
+        video.onerror = () => rej(new Error("erro ao carregar vídeo"));
+      });
+      video.currentTime = Math.min(0.1, (video.duration || 1) * 0.01);
+      await new Promise<void>((res) => {
+        video.onseeked = () => res();
+        setTimeout(res, 1500);
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = 320;
+      canvas.height = 180;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return undefined;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.7);
+    } catch {
+      return undefined;
+    }
+  }, []);
+
   // Import pendente de arquivos vindos de outras telas (ex.: Criação em Massa).
+  // CRIA UM NOVO PROJETO — nunca sobrescreve o que já estava sendo editado.
   useEffect(() => {
-    const files = consumePendingFileImport();
-    if (!files || files.length === 0) return;
-    handleMediaImport({ detail: { files } } as CustomEvent);
-  }, [handleMediaImport]);
+    const items = consumePendingFileImport();
+    if (!items || items.length === 0) return;
+
+    const projectName = items[0]?.projectName || "Vídeo enviado";
+    useProjectsStore.getState().createNew(projectName);
+    useProjectStore.getState().setProject(createBlankProject());
+
+    items.forEach((it) => importMediaFile(it.file, it.duration));
+
+    // Capa: primeiro clipe de vídeo inserido.
+    const firstVideo = useProjectStore.getState().project.timeline.items.find((i) => i.kind === "video");
+    if (firstVideo?.src) {
+      captureProjectThumbnail(firstVideo.src).then((thumb) => {
+        if (thumb) {
+          const cur = useProjectsStore.getState();
+          cur.saveCurrent(useProjectStore.getState().project, {
+            name: projectName,
+            thumbnailUrl: thumb,
+          });
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importMediaFile]);
 
   // Import pendente vindo do "Criar Vídeo no Editor" (calendário/posts).
   useEffect(() => {
@@ -261,6 +316,37 @@ export default function EditorPage() {
     return () => window.removeEventListener("editor-media-uploaded", onUploaded);
   }, []);
 
+  // Auto-save: cada alteração na timeline OU na agulha atualiza (com debounce)
+  // o rascunho ativo em "Meus Projetos" (estilo CapCut), guardando também a
+  // posição exata da agulha e a duração total.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const persist = () => {
+      const p = useProjectStore.getState().project;
+      const fps = p.timeline.fps || 30;
+      const lastEnd = p.timeline.items.length
+        ? Math.max(...p.timeline.items.map((i) => i.startFrame + i.durationInFrames))
+        : 0;
+      const currentTime = usePlaybackStore.getState().currentTime;
+      useProjectsStore.getState().saveCurrent(p, {
+        name: p.name,
+        currentTime,
+        totalDuration: lastEnd / fps,
+      });
+    };
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(persist, 1000);
+    };
+    const unsubProject = useProjectStore.subscribe(schedule);
+    const unsubPlayback = usePlaybackStore.subscribe(schedule);
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubProject();
+      unsubPlayback();
+    };
+  }, []);
+
   const handleCanvasAspectChange = useCallback((aspectRatio: string) => {
     const dims = ASPECT_RATIOS[aspectRatio as keyof typeof ASPECT_RATIOS];
     if (!dims) return;
@@ -344,7 +430,21 @@ export default function EditorPage() {
             <Redo2 size={14} />
           </button>
           <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
-          <button className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400" title="Salvar">
+          <button
+            onClick={() => setProjectsOpen(true)}
+            className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400"
+            title="Meus projetos (rascunhos)"
+          >
+            📁
+          </button>
+          <button
+            onClick={() => {
+              const p = useProjectStore.getState().project;
+              useProjectsStore.getState().saveCurrent(p, { name: p.name, currentTime: usePlaybackStore.getState().currentTime });
+            }}
+            className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400"
+            title="Salvar agora"
+          >
             <Save size={14} />
           </button>
         </div>
@@ -450,6 +550,8 @@ export default function EditorPage() {
           </div>
         )}
       </div>
+
+      <ProjectsModal open={projectsOpen} onClose={() => setProjectsOpen(false)} />
     </div>
   );
 }

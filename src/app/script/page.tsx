@@ -114,6 +114,7 @@ export default function ScriptPage() {
 
   // Step 2 — Generation
   const [theme, setTheme] = useState("");
+  const [scriptMode, setScriptMode] = useState<"idea" | "extracted_audio" | "raw_text">("idea");
   const [quantity, setQuantity] = useState(3);
   const [duracao, setDuracao] = useState("30s");
   const [selectedObjectives, setSelectedObjectives] = useState<string[]>([]);
@@ -356,6 +357,8 @@ export default function ScriptPage() {
         model: selectedModel,
         apiKey,
         apiKeys: apiKeys.length > 0 ? apiKeys : apiKey ? [apiKey] : [],
+        mode: scriptMode,
+        rawContent: theme,
       });
 
       if (!aiVariations || aiVariations.length === 0) {
@@ -658,10 +661,41 @@ export default function ScriptPage() {
                 <Lightbulb className="w-4 h-4 text-[var(--accent-orange)]" />
                 <h2 className="text-sm font-bold text-white">Tema / Ideia Central</h2>
               </div>
+
+              {/* Origem do conteúdo: roteiro livre vs remodelagem de vídeo viral */}
+              <div className="flex items-center gap-1 p-1 bg-[var(--surface)] border border-[var(--border)] rounded-[10px] mb-3">
+                <button
+                  type="button"
+                  onClick={() => setScriptMode("idea")}
+                  className={`flex-1 px-2 py-1.5 rounded-[8px] text-xs font-medium transition-all ${
+                    scriptMode === "idea"
+                      ? "bg-[var(--primary)] text-white"
+                      : "text-[var(--text-secondary)] hover:text-white"
+                  }`}
+                >
+                  Criar Roteiro Livre
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScriptMode("extracted_audio")}
+                  className={`flex-1 px-2 py-1.5 rounded-[8px] text-xs font-medium transition-all ${
+                    scriptMode === "extracted_audio"
+                      ? "bg-[var(--accent-orange)] text-white"
+                      : "text-[var(--text-secondary)] hover:text-white"
+                  }`}
+                >
+                  Remodelar Vídeo Viral
+                </button>
+              </div>
+
               <textarea
                 value={theme}
                 onChange={(e) => setTheme(e.target.value)}
-                placeholder="Ex: 3 erros que destroem seu trafego pago..."
+                placeholder={
+                  scriptMode === "idea"
+                    ? "Ex: 3 erros que destroem seu trafego pago..."
+                    : "Cole a transcricao do video viral que ja funcionou..."
+                }
                 className="input-field w-full h-28 px-4 py-3 rounded-[12px] resize-none"
               />
               <div className="mt-2 p-2.5 rounded-[8px] bg-purple-950/30 border border-purple-800/40 text-[11px] text-purple-200/80 flex items-start gap-2">

@@ -52,8 +52,8 @@ import { buildZip, downloadBlob } from "@/utils/zip";
 import { fisherYatesShuffle } from "@/utils/shuffle";
 import { deduplicateById } from "@/utils/videoDedup";
 import {
-  sendToEditor as sendVariationToEditor,
-  sendBatchToEditor,
+  sendFinalVideoToEditor,
+  sendFinalVideosToEditor,
 } from "@/services/bulkToEditorService";
 import MediaIntegrityBadge from "@/components/media/MediaIntegrityBadge";
 import { MediaVault } from "@/services/persistentMediaVault";
@@ -739,7 +739,14 @@ export default function MassProductionPage() {
             `Video_${String(videoId).padStart(2, "0")}.mp4`
           );
         } catch (uploadErr) {
-          console.warn("[MassProduction] Falha no upload Supabase Storage (usando fallback S3/local):", uploadErr);
+          const errMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+          console.error("[MassProduction] Falha no upload Supabase Storage (usando fallback S3/local):", uploadErr);
+          // Alerta visível para depuração: o vídeo ficou apenas em S3/local.
+          alert(
+            `⚠️ Falha no upload para o Supabase Storage (nuvem).\n` +
+            `O vídeo "${`Video_${String(videoId).padStart(2, "0")}.mp4`}" foi salvo apenas localmente/S3.\n\n` +
+            `Erro: ${errMsg}`
+          );
         }
 
         const storedUrl = cloudUrl || permanentUrl || result.url;
@@ -867,17 +874,16 @@ export default function MassProductionPage() {
 
   const selectedCount = renderedVideos.filter((v) => v.selected).length;
 
-  const getCombinationFiles = (video: RenderedVideo): File[] | null => {
-    const files = video.variation.blocks
-      .map((b) => b.file)
-      .filter((f): f is File => !!f && typeof File !== "undefined" && f instanceof File);
-    return files.length >= 2 ? files : null;
-  };
-
   const handleSendToEditor = async (video: RenderedVideo) => {
-    const count = await sendVariationToEditor(video.variation);
+    const count = await sendFinalVideoToEditor({
+      blob: video.blob,
+      videoUrl: video.videoUrl,
+      blobUrl: video.blobUrl,
+      duration: video.duration,
+      name: `Video-${video.id}.mp4`,
+    });
     if (count === 0) {
-      alert("Este video foi carregado do banco sem os arquivos locais. Regere a variacao para enviar ao editor.");
+      alert("Nao foi possivel obter o video final. Regere a variacao para envia-la ao editor.");
       return;
     }
     router.push("/editor");
@@ -886,9 +892,17 @@ export default function MassProductionPage() {
   const handleSendSelectedToEditor = async () => {
     const selected = renderedVideos.filter((v) => v.selected);
     if (selected.length === 0) return;
-    const count = await sendBatchToEditor(selected.map((v) => v.variation));
+    const count = await sendFinalVideosToEditor(
+      selected.map((v) => ({
+        blob: v.blob,
+        videoUrl: v.videoUrl,
+        blobUrl: v.blobUrl,
+        duration: v.duration,
+        name: `Video-${v.id}.mp4`,
+      }))
+    );
     if (count === 0) {
-      alert("Nenhum arquivo local disponivel nos videos selecionados.");
+      alert("Nenhum video final disponivel nos videos selecionados.");
       return;
     }
     router.push("/editor");
@@ -1338,9 +1352,9 @@ export default function MassProductionPage() {
                         className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 text-xs py-2 px-1 rounded flex items-center justify-center gap-1 transition-colors disabled:opacity-30">
                         ⬇️ Baixar
                       </button>
-                      <button onClick={() => handleSendToEditor(video)} disabled={video.status !== "ready" || !getCombinationFiles(video)}
+                      <button onClick={() => handleSendToEditor(video)} disabled={video.status !== "ready"}
                         className="bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 text-xs py-2 px-1 rounded flex items-center justify-center gap-1 transition-colors disabled:opacity-30"
-                        title="Enviar os 3 trechos (Hook + Desenvolvimento + CTA) para o editor">
+                        title="Enviar o video final completo para o editor (cria um rascunho)">
                         🎬 Editor
                       </button>
                       <button
