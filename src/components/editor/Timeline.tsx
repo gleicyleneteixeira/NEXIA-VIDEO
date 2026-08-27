@@ -87,6 +87,45 @@ export default function Timeline() {
     }
   }, [selectedItem, currentTime, rippleTrimEnd]);
 
+  // Zoom temporal da timeline via Ctrl + Wheel (estilo CapCut).
+  // Bloqueia o zoom nativo do navegador (passive: false) e ajusta o `zoom`
+  // da useUIStore, preservando o ponto focal sob o cursor.
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+
+      // 1. Impede o zoom da página inteira do navegador.
+      e.preventDefault();
+
+      const rect = container.getBoundingClientRect();
+      const cursorOffset = e.clientX - rect.left;
+      const oldPxPerFrame = useUIStore.getState().zoom * 2;
+      // Quadro que está sob o cursor no momento do scroll.
+      const focalFrame = (container.scrollLeft + cursorOffset) / oldPxPerFrame;
+
+      const zoomSensitivity = 0.05;
+      const factor = e.deltaY < 0 ? 1 + zoomSensitivity : 1 - zoomSensitivity;
+      const newZoom = useUIStore.getState().zoom * factor;
+      useUIStore.getState().setZoom(newZoom);
+
+      // 2. Mantém o ponto focal fixo após o re-render (nova largura aplicada).
+      requestAnimationFrame(() => {
+        const newPxPerFrame = useUIStore.getState().zoom * 2;
+        const target = focalFrame * newPxPerFrame - cursorOffset;
+        container.scrollLeft = Math.max(0, target);
+      });
+    };
+
+    // passive: false é OBRIGATÓRIO para o preventDefault() funcionar no 'wheel'.
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
+
   const isCutoutActive = !!(selectedItem?.autoCutout?.enabled || selectedItem?.chromaKey?.enabled || selectedItem?.manualMask?.enabled);
 
   const toggleBackgroundRemoval = useCallback(() => {
