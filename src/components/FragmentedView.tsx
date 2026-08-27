@@ -119,6 +119,10 @@ export default function FragmentedView({ variations }: FragmentedViewProps) {
       text: v.solution || "",
       index: i,
     }));
+    const benefits = variations.map((v, i) => ({
+      text: v.benefit || "",
+      index: i,
+    }));
     return (
       <div className="space-y-4 animate-fade-in">
         <div className="flex items-center gap-2 mb-2 px-1">
@@ -148,6 +152,15 @@ export default function FragmentedView({ variations }: FragmentedViewProps) {
           accent="#8b5cf6"
           icon={Lightbulb}
         />
+        {variations.some((v) => !!v.benefit) && (
+          <BlockSection
+            title="Todos os BENEFÍCIOS / TRANSFORMAÇÕES"
+            emoji="✨"
+            items={benefits}
+            accent="#06b6d4"
+            icon={Sparkles}
+          />
+        )}
         <BlockSection
           title="Todas as CTAs (Slot 4)"
           emoji="📢"

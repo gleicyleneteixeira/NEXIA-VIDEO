@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildRemodelPrompt } from "@/services/aiScriptEngine";
+import { buildViralScriptPrompt } from "@/services/aiScriptEngine";
 
 const SYSTEM_INSTRUCTION = `Voce e o Diretor de Copywriting do SaaS NEXIA VIDEO.
 Sua unica funcao e receber o input do usuario (mesmo que seja uma ideia vaga, um desabafo desorganizado, sem pontuacao ou um texto longo) e criar roteiros virais e persuasivos para Reels/TikTok/Shorts.
@@ -503,7 +503,7 @@ function parseJsonResponse(content: string): Record<string, unknown>[] | null {
 function normalizeVariation(v: Record<string, unknown>): Record<string, unknown> {
   const obj = { ...v };
 
-  const painOrDesire = obj.painOrDesire || obj.dor;
+  const painOrDesire = obj.painOrDesire || obj.pain || obj.dor;
   const solution = obj.solution || obj.desejo;
   const development =
     obj.development ||
@@ -527,6 +527,9 @@ function normalizeVariation(v: Record<string, unknown>): Record<string, unknown>
   obj.solution = (solution as string) || "";
   obj.development = (development as string) || "";
   obj.cta = (obj.cta as string) || "";
+  obj.benefit = (obj.benefit as string) || "";
+  obj.isExactRemodel = !!obj.isExactRemodel;
+  obj.fullScriptText = (obj.fullScriptText as string) || "";
 
   const fullBlocks = [obj.hook, obj.painOrDesire, obj.solution, obj.cta]
     .filter(Boolean)
@@ -734,7 +737,7 @@ export async function POST(request: NextRequest) {
     }
 
     const userPrompt = isRemodelMode
-      ? buildRemodelPrompt({
+      ? buildViralScriptPrompt({
           mode,
           rawContent: effectiveContent,
           count: quantity,

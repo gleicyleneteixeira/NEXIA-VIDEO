@@ -24,10 +24,14 @@ export interface AIScriptVariation {
   headline: string;
   hook: string;
   painOrDesire: string;
+  pain?: string;
   solution: string;
   cta: string;
   seoCaption: string;
   development?: string;
+  benefit?: string;
+  isExactRemodel?: boolean;
+  fullScriptText?: string;
   scene_direction: string;
   brolls: string[];
   hashtags: string[];

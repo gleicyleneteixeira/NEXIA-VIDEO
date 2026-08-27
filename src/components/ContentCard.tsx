@@ -23,8 +23,12 @@ export interface Variation {
   dor?: string;
   desejo?: string;
   painOrDesire?: string;
+  pain?: string;
   solution?: string;
   development?: string;
+  benefit?: string;
+  isExactRemodel?: boolean;
+  fullScriptText?: string;
   cta: string;
   headline: string;
   caption: string;
@@ -218,14 +222,20 @@ export default function ContentCard({
       {/* Content */}
       {expanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-[var(--border-subtle)]">
-          {/* 4-Block Copy: Gancho / Dor-Desejo-Duvida / Solucao / CTA */}
+          {/* Matriz de Blocos Intercambiáveis */}
           <div className="pt-3 space-y-2">
-            <CopyBox label="Slot 1 · Gancho (Hook)" text={variation.hook} icon={Target} accent="#ec4899" />
+            {variation.isExactRemodel && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] bg-[var(--accent-green)]/10 border border-[var(--accent-green)]/25 text-[var(--accent-green)] text-[11px] font-semibold">
+                <Check className="w-3.5 h-3.5" />
+                Gancho Original Preservado (Remodelagem Fiel)
+              </div>
+            )}
+            <CopyBox label="[GANCHO] · Slot 1 (Hook)" text={variation.hook} icon={Target} accent="#ec4899" />
             {variation.painOrDesire || variation.solution ? (
               <>
                 {variation.painOrDesire && (
                   <CopyBox
-                    label="Slot 2 · Dor / Desejo / Dúvida"
+                    label="[DOR] · Slot 2"
                     text={variation.painOrDesire}
                     icon={Zap}
                     accent="#f59e0b"
@@ -233,7 +243,7 @@ export default function ContentCard({
                 )}
                 {variation.solution && (
                   <CopyBox
-                    label="Slot 3 · Solução"
+                    label="[SOLUÇÃO] · Slot 3"
                     text={variation.solution}
                     icon={Lightbulb}
                     accent="#8b5cf6"
@@ -242,7 +252,7 @@ export default function ContentCard({
               </>
             ) : variation.development ? (
               <CopyBox
-                label="Desenvolvimento (Dor + Solução)"
+                label="[DESENVOLVIMENTO]"
                 text={variation.development}
                 icon={Lightbulb}
                 accent="#8b5cf6"
@@ -250,14 +260,22 @@ export default function ContentCard({
             ) : (
               <>
                 {variation.dor && (
-                  <CopyBox label="Dor (Problema)" text={variation.dor} icon={Zap} accent="#f59e0b" />
+                  <CopyBox label="[DOR] · Problema" text={variation.dor} icon={Zap} accent="#f59e0b" />
                 )}
                 {variation.desejo && (
-                  <CopyBox label="Desejo (Solucao)" text={variation.desejo} icon={Sparkles} accent="#8b5cf6" />
+                  <CopyBox label="[DESEJO] · Solução" text={variation.desejo} icon={Sparkles} accent="#8b5cf6" />
                 )}
               </>
             )}
-            <CopyBox label="Slot 4 · CTA (Chamada)" text={variation.cta} icon={Megaphone} accent="#10b981" />
+            {variation.benefit && (
+              <CopyBox
+                label="[BENEFÍCIO] · Transformação"
+                text={variation.benefit}
+                icon={Sparkles}
+                accent="#06b6d4"
+              />
+            )}
+            <CopyBox label="[CTA] · Slot 4 (Chamada)" text={variation.cta} icon={Megaphone} accent="#10b981" />
           </div>
 
           {/* Headline & Caption */}
