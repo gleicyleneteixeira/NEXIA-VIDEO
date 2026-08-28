@@ -144,7 +144,7 @@ function ClipWaveform({ src, seed, width, mode, color }: { src?: string; seed: s
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const data = peaks && peaks.length >= 2 ? peaks : seededBars(seed, Math.max(8, Math.floor(size.w / 3)));
-    drawWaveformBars(ctx, data, size.w, size.h, mode === "fill" ? color : "#22c55e");
+    drawWaveformBars(ctx, data, size.w, size.h, color);
   }, [peaks, size, seed, mode, color]);
 
   return (
@@ -297,10 +297,11 @@ export default function TimelineClip({
         <div className="absolute inset-0" style={{ backgroundColor: accent }} />
       )}
 
-      {/* Waveform sobreposto na base dos clipes de vídeo (CapCut-style) */}
+      {/* Waveform sobreposto na base dos clipes de vídeo (CapCut-style).
+          Some quando o áudio é extraído (item.audio?.muted) — vira a trilha de áudio pura. */}
       {kind === "video" && showWaveformOverlay && width > 24 && (
-        <div className="absolute inset-x-0 bottom-0 h-[40%] overflow-hidden opacity-95 rounded-b-md pointer-events-none">
-          <ClipWaveform src={item.src} seed={item.id} width={width} mode="overlay" color="#22c55e" />
+        <div className="absolute bottom-0 left-0 right-0 h-[40%] overflow-hidden pointer-events-none bg-gradient-to-t from-black/60 via-black/25 to-transparent">
+          <ClipWaveform src={item.src} seed={item.id} width={width} mode="overlay" color="rgba(34, 197, 94, 0.7)" />
         </div>
       )}
 
