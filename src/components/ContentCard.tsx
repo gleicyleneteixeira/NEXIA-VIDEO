@@ -17,6 +17,7 @@ import {
   Lightbulb,
 } from "lucide-react";
 import { getStockSearchKeywords, buildStockMediaUrls } from "@/utils/stockSearchHelper";
+import { sanitizeHashtags } from "@/utils/hashtagUtils";
 
 export interface Variation {
   hook: string;
@@ -101,7 +102,7 @@ export default function ContentCard({
   const fullCaption =
     (variation.seoCaption || variation.caption || "").trim() +
     (variation.hashtags && variation.hashtags.length > 0
-      ? "\n\n" + variation.hashtags.map((t) => "#" + t).join(" ")
+      ? "\n\n" + sanitizeHashtags(variation.hashtags)
       : "");
 
   const handleCopyScript = () => {
