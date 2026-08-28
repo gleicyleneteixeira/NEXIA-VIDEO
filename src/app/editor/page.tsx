@@ -450,7 +450,7 @@ export default function EditorPage() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {sidebarOpen && (
           <div className="flex flex-shrink-0">
             <div className="w-[72px] bg-[#0a0a12] border-r border-[#1e1e2e] flex flex-col items-center py-2 gap-0.5 overflow-y-auto">
@@ -520,28 +520,8 @@ export default function EditorPage() {
           </div>
         )}
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 min-h-0">
-            <Preview />
-          </div>
-
-          {/* Alça horizontal: puxar para cima aumenta a timeline (min 220px → max 60vh). */}
-          <div
-            className="h-1.5 flex-shrink-0 bg-transparent hover:bg-[#2a2a3a] active:bg-[#3a3a4a] cursor-row-resize touch-none transition-colors"
-            title="Redimensionar a timeline"
-            onPointerDown={handleTimelineResizeStart}
-            onPointerMove={handleTimelineResizeMove}
-            onPointerUp={handleTimelineResizeEnd}
-            onPointerCancel={handleTimelineResizeEnd}
-            onPointerLeave={handleTimelineResizeEnd}
-          />
-
-          <div
-            className="flex-shrink-0 border-t border-[#1e1e2e]"
-            style={{ height: timelineHeight }}
-          >
-            <Timeline />
-          </div>
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-black">
+          <Preview />
         </div>
 
         {rightPanelOpen && (
@@ -550,6 +530,25 @@ export default function EditorPage() {
           </div>
         )}
       </div>
+
+      {/* Alça horizontal: puxar para cima aumenta a timeline (min 220px → max 60vh). */}
+      <div
+        className="h-1.5 flex-shrink-0 bg-transparent hover:bg-[#2a2a3a] active:bg-[#3a3a4a] cursor-row-resize touch-none transition-colors"
+        title="Redimensionar a timeline"
+        onPointerDown={handleTimelineResizeStart}
+        onPointerMove={handleTimelineResizeMove}
+        onPointerUp={handleTimelineResizeEnd}
+        onPointerCancel={handleTimelineResizeEnd}
+        onPointerLeave={handleTimelineResizeEnd}
+      />
+
+      {/* ANDAR INFERIOR: TIMELINE EM 100% DE LARGURA (DE PONTA A PONTA) */}
+      <footer
+        className="w-full flex-shrink-0"
+        style={{ height: timelineHeight }}
+      >
+        <Timeline />
+      </footer>
 
       <ProjectsModal open={projectsOpen} onClose={() => setProjectsOpen(false)} />
     </div>
