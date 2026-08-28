@@ -63,7 +63,7 @@ export default function EditorPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("media");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [timelineHeight, setTimelineHeight] = useState(220);
+  const [timelineHeight, setTimelineHeight] = useState(380);
   const [projectsOpen, setProjectsOpen] = useState(false);
 
   const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -77,7 +77,7 @@ export default function EditorPage() {
     const d = timelineResizeRef.current;
     if (!d) return;
     const minH = 220;
-    const maxH = Math.floor(window.innerHeight * 0.6);
+    const maxH = Math.floor(window.innerHeight * 0.65);
     const next = d.startHeight + (d.startY - e.clientY);
     setTimelineHeight(Math.max(minH, Math.min(next, maxH)));
   }, []);
@@ -531,16 +531,18 @@ export default function EditorPage() {
         )}
       </div>
 
-      {/* Alça horizontal: puxar para cima aumenta a timeline (min 220px → max 60vh). */}
+      {/* Alça horizontal: puxar para cima aumenta a timeline (min 220px → max 65vh). */}
       <div
-        className="h-1.5 flex-shrink-0 bg-transparent hover:bg-[#2a2a3a] active:bg-[#3a3a4a] cursor-row-resize touch-none transition-colors"
+        className="group h-1.5 flex-shrink-0 bg-[#16161f] hover:bg-emerald-500/70 active:bg-emerald-400 cursor-row-resize touch-none transition-colors z-30 flex items-center justify-center"
         title="Redimensionar a timeline"
         onPointerDown={handleTimelineResizeStart}
         onPointerMove={handleTimelineResizeMove}
         onPointerUp={handleTimelineResizeEnd}
         onPointerCancel={handleTimelineResizeEnd}
         onPointerLeave={handleTimelineResizeEnd}
-      />
+      >
+        <div className="w-12 h-1 rounded-full bg-neutral-600 group-hover:bg-white/80" />
+      </div>
 
       {/* ANDAR INFERIOR: TIMELINE EM 100% DE LARGURA (DE PONTA A PONTA) */}
       <footer
