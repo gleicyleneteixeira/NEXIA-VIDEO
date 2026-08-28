@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { TimelineItem } from "@/lib/editor";
 import { useVideoThumbnails } from "@/lib/editor/useVideoThumbnails";
+import { AudioDecodeService } from "@/services/audioDecodeService";
 
 export type ClipVisualKind = "video" | "audio" | "text" | "sticker";
 
@@ -43,27 +44,55 @@ function seededBars(seed: string, count: number, min = 0.18, max = 1): number[] 
   return bars;
 }
 
-function WaveformBars({ item, width, mode }: { item: TimelineItem; width: number; mode: "fill" | "overlay" }) {
+function WaveformBars({
+  seed,
+  width,
+  mode,
+  color,
+  peaks,
+}: {
+  seed: string;
+  width: number;
+  mode: "fill" | "overlay";
+  color: string;
+  peaks?: number[] | null;
+}) {
   const count = Math.max(8, Math.floor(width / 3));
-  const bars = useMemo(() => seededBars(item.id, count), [item.id, count]);
-  const palette = KIND_PALETTE[mode === "fill" ? "audio" : "video"];
-  const color = item.color || palette.base;
+  const procedural = useMemo(() => seededBars(seed, count), [seed, count]);
+  const bars = peaks && peaks.length >= 2 ? peaks : procedural;
 
   return (
     <div className="absolute inset-0 flex items-center justify-between gap-px overflow-hidden">
       {bars.map((b, i) => (
-          <div
-            key={i}
-            className="w-[2px] rounded-full"
-            style={{
-              height: `${Math.round(b * 100)}%`,
-              backgroundColor: mode === "fill" ? color : "#22c55e",
-              opacity: mode === "fill" ? 0.85 : 0.9,
-            }}
-          />
+        <div
+          key={i}
+          className="w-[2px] rounded-full"
+          style={{
+            height: `${Math.round(b * 100)}%`,
+            backgroundColor: mode === "fill" ? color : "#22c55e",
+            opacity: mode === "fill" ? 0.85 : 0.9,
+          }}
+        />
       ))}
     </div>
   );
+}
+
+/** Carrega peaks reais de áudio (Web Audio API) e cai para waveform procedural se falhar. */
+function ClipWaveform({ src, seed, width, mode, color }: { src?: string; seed: string; width: number; mode: "fill" | "overlay"; color: string }) {
+  const count = Math.max(8, Math.floor(width / 3));
+  const [peaks, setPeaks] = useState<number[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!src) return;
+    AudioDecodeService.getAudioPeaks(src, count)
+      .then((p) => { if (!cancelled) setPeaks(p.length ? p : null); })
+      .catch(() => { if (!cancelled) setPeaks(null); });
+    return () => { cancelled = true; };
+  }, [src, count]);
+
+  return <WaveformBars seed={seed} width={width} mode={mode} color={color} peaks={peaks} />;
 }
 
 function KindGlyph({ kind }: { kind: ClipVisualKind }) {
@@ -190,7 +219,7 @@ export default function TimelineClip({
         />
       ) : kind === "audio" ? (
         <div className="absolute inset-0 rounded-md overflow-hidden" style={{ backgroundColor: accent }}>
-          <WaveformBars item={item} width={width} mode="fill" />
+          <ClipWaveform src={item.src} seed={item.id} width={width} mode="fill" color={accent} />
         </div>
       ) : kind === "text" ? (
         <div className="absolute inset-0 rounded-md overflow-hidden px-2 flex items-center" style={{ backgroundColor: accent }}>
@@ -212,7 +241,7 @@ export default function TimelineClip({
       {/* Waveform sobreposto na base dos clipes de vídeo (CapCut-style) */}
       {kind === "video" && showWaveformOverlay && width > 24 && (
         <div className="absolute inset-x-0 bottom-0 h-[40%] overflow-hidden opacity-95 rounded-b-md pointer-events-none">
-          <WaveformBars item={item} width={width} mode="overlay" />
+          <ClipWaveform src={item.src} seed={item.id} width={width} mode="overlay" color="#22c55e" />
         </div>
       )}
 

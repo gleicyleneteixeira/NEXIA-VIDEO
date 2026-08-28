@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { useProjectStore, usePlaybackStore, useUIStore, useMediaStore, calculateReorderedTrack, getMainTrackId, calculateSafeMenuPosition } from "@/lib/editor";
 import type { TimelineItem, BeatMarker, MediaFile, Project } from "@/lib/editor";
-import { DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, generateId } from "@/lib/editor";
+import { DEFAULT_TRANSFORM, DEFAULT_FILTERS, DEFAULT_CROP,DEFAULT_MASK, DEFAULT_CHROMA_KEY, DEFAULT_SPEED, DEFAULT_ANIMATION, DEFAULT_AUDIO, generateId } from "@/lib/editor";
 import { withHistory, snapshotProject, commitHistory } from "@/lib/editor/history";
+import { AudioDecodeService, detectSilenceEdges } from "@/services/audioDecodeService";
 import TimelineClip from "./TimelineClip";
 import CoverModal from "./CoverModal";
 import VoiceoverModal from "./VoiceoverModal";
@@ -310,6 +311,54 @@ export default function Timeline() {
 
     setShowVlogCutModal(false);
   }, [project, vlogKeepSeconds, vlogDiscardSeconds, vlogMode, vlogTarget, selectedIds, selectedItem, currentTime, clearSelection, syncCompatibilityFields]);
+
+  const handleRemoveSilence = useCallback(async () => {
+    if (!selectedItem) {
+      alert("Selecione um clipe primeiro.");
+      return;
+    }
+    const item = selectedItem;
+    if (item.speed?.rate !== 1) {
+      alert("A remoção de silêncio requer velocidade 1x.");
+      return;
+    }
+    const src = item.src;
+    if (!src) {
+      alert("O clipe não possui origem de mídia para analisar.");
+      return;
+    }
+    const fps = timeline.fps || 30;
+    try {
+      const totalFrames = await AudioDecodeService.getSourceFrames(src, fps);
+      if (!totalFrames) {
+        alert("Não foi possível decodificar o áudio deste clipe (o navegador pode não suportar este formato de vídeo).");
+        return;
+      }
+      const peaks = await AudioDecodeService.getAudioPeaks(src, totalFrames);
+      if (!peaks.length) {
+        alert("Não foi possível decodificar o áudio deste clipe.");
+        return;
+      }
+      const srcIn = item.srcInFrame ?? 0;
+      const srcOut = item.srcOutFrame ?? totalFrames;
+      const clipPeaks = peaks.slice(srcIn, srcOut);
+      const minSilence = Math.max(2, Math.round(fps * 0.2));
+      const { lead, tail } = detectSilenceEdges(clipPeaks, 0.02, minSilence);
+      if (lead === 0 && tail === 0) {
+        alert("Nenhum silêncio nas pontas do clipe foi detectado.");
+        return;
+      }
+      const newIn = srcIn + lead;
+      const newOut = Math.max(newIn + 1, srcOut - tail);
+      withHistory("Remover silêncio", () => updateItem(item.id, {
+        srcInFrame: newIn,
+        srcOutFrame: newOut,
+        durationInFrames: Math.max(1, newOut - newIn),
+      }));
+    } catch {
+      alert("Falha ao analisar o áudio do clipe.");
+    }
+  }, [selectedItem, timeline, updateItem]);
 
   const hasAnyKeyframeAtPlayhead = useMemo(() => {
     if (!selectedItem) return false;
@@ -1050,6 +1099,15 @@ const trimGestureRef = useRef(false);
         >
           <Zap size={14} className="text-yellow-500" />
           <span className="text-[10px] font-semibold text-gray-300">Vlog Cut</span>
+        </button>
+        <button
+          onClick={handleRemoveSilence}
+          disabled={!selectedItem}
+          className="p-1.5 hover:bg-[#1e1e2e] rounded text-gray-400 flex items-center gap-1 disabled:opacity-30"
+          title="Remover silêncio nas pontas do clipe (corte automático de áudio)"
+        >
+          <VolumeX size={14} className="text-emerald-400" />
+          <span className="text-[10px] font-semibold text-gray-300">Remover Silêncio</span>
         </button>
 
         <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
