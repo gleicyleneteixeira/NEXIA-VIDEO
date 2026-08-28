@@ -1109,6 +1109,18 @@ const trimGestureRef = useRef(false);
           <VolumeX size={14} className="text-emerald-400" />
           <span className="text-[10px] font-semibold text-gray-300">Remover Silêncio</span>
         </button>
+        <button
+          onClick={handleMainKeyframeToggle}
+          disabled={!selectedItem}
+          className={`p-1.5 rounded transition-all flex items-center justify-center ${
+            hasAnyKeyframeAtPlayhead
+              ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50 hover:bg-yellow-500/30"
+              : "text-gray-400 hover:bg-[#1e1e2e] disabled:opacity-30 border border-transparent"
+          }`}
+          title={hasAnyKeyframeAtPlayhead ? "Remover Keyframe" : "Adicionar Keyframe"}
+        >
+          <span className="text-sm leading-none font-bold">◆</span>
+        </button>
 
         <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
 
@@ -1189,21 +1201,6 @@ const trimGestureRef = useRef(false);
             <ZoomIn size={14} />
           </button>
         </div>
-
-        <div className="w-px h-5 bg-[#1e1e2e] mx-1" />
-
-        <button
-          onClick={handleMainKeyframeToggle}
-          disabled={!selectedItem}
-          className={`p-1.5 rounded transition-all flex items-center justify-center ${
-            hasAnyKeyframeAtPlayhead
-              ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50 hover:bg-yellow-500/30"
-              : "text-gray-400 hover:bg-[#1e1e2e] disabled:opacity-30 border border-transparent"
-          }`}
-          title={hasAnyKeyframeAtPlayhead ? "Remover Keyframe" : "Adicionar Keyframe"}
-        >
-          <span className="text-sm leading-none font-bold">◆</span>
-        </button>
 
       </div>
 
