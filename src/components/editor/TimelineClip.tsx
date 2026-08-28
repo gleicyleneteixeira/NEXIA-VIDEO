@@ -52,15 +52,15 @@ function WaveformBars({ item, width, mode }: { item: TimelineItem; width: number
   return (
     <div className="absolute inset-0 flex items-center justify-between gap-px overflow-hidden">
       {bars.map((b, i) => (
-        <div
-          key={i}
-          className="w-[2px] rounded-full"
-          style={{
-            height: `${Math.round(b * 100)}%`,
-            backgroundColor: mode === "fill" ? color : "#ffffff",
-            opacity: mode === "fill" ? 0.85 : 0.5,
-          }}
-        />
+          <div
+            key={i}
+            className="w-[2px] rounded-full"
+            style={{
+              height: `${Math.round(b * 100)}%`,
+              backgroundColor: mode === "fill" ? color : "#22c55e",
+              opacity: mode === "fill" ? 0.85 : 0.9,
+            }}
+          />
       ))}
     </div>
   );
@@ -125,13 +125,15 @@ export default function TimelineClip({
   return (
     <div
       className={`timeline-clip absolute top-1 bottom-1 rounded-md cursor-grab active:cursor-grabbing border flex items-center overflow-visible transition-opacity hover:brightness-110 select-none touch-none ${
-        selected ? "border-white/50" : "border-white/[0.07]"
+        selected ? "border-2 border-cyan-400" : "border border-white/[0.07]"
       }`}
       style={{
         left,
         width,
         backgroundColor: palette.solid,
-        boxShadow: selected ? `0 0 0 1px ${palette.selected}55, 0 2px 8px rgba(0,0,0,0.4)` : "0 1px 3px rgba(0,0,0,0.35)",
+        boxShadow: selected
+          ? "0 0 0 2px #22d3ee, 0 2px 10px rgba(34,211,238,0.35)"
+          : "0 1px 3px rgba(0,0,0,0.35)",
       }}
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
@@ -141,7 +143,7 @@ export default function TimelineClip({
       {onTrimLeft && (
         <div
           data-trim-handle
-          className="absolute left-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-l-md bg-white/10 touch-none select-none"
+          className="absolute left-0 top-0 bottom-0 w-2.5 z-20 cursor-ew-resize hover:bg-cyan-300 rounded-l-md bg-cyan-400/70 touch-none select-none"
           onPointerDown={(e) => { e.stopPropagation(); onTrimLeft(e); }}
         />
       )}
@@ -209,7 +211,7 @@ export default function TimelineClip({
 
       {/* Waveform sobreposto na base dos clipes de vídeo (CapCut-style) */}
       {kind === "video" && showWaveformOverlay && width > 24 && (
-        <div className="absolute inset-x-0 bottom-0 h-[32%] overflow-hidden opacity-90 rounded-b-md pointer-events-none">
+        <div className="absolute inset-x-0 bottom-0 h-[40%] overflow-hidden opacity-95 rounded-b-md pointer-events-none">
           <WaveformBars item={item} width={width} mode="overlay" />
         </div>
       )}
@@ -262,7 +264,7 @@ export default function TimelineClip({
       {onTrimRight && (
         <div
           data-trim-handle
-          className="absolute right-0 top-0 bottom-0 w-2 z-20 cursor-ew-resize hover:bg-white/40 rounded-r-md bg-white/10 touch-none select-none"
+          className="absolute right-0 top-0 bottom-0 w-2.5 z-20 cursor-ew-resize hover:bg-cyan-300 rounded-r-md bg-cyan-400/70 touch-none select-none"
           onPointerDown={(e) => { e.stopPropagation(); onTrimRight(e); }}
         />
       )}

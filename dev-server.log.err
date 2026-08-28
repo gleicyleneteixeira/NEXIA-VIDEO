@@ -1,1 +1,74 @@
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
 
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/login" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <script>
+                      <ClientSegmentRoot Component={function RootLayout} slots={{children:{...}}} ...>
+                        <RootLayout params={Promise}>
+                          <html lang="pt-BR" suppressHydrationWarning={true}>
+                            <body
+                              className="h-screen w-screen overflow-hidden bg-[#0a0d14]"
+-                             __processed_0c3888e4-7cf8-450c-9463-80ae1987e29b__="true"
+                            >
+                  ...
+ 
+    at <unknown> (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:3439:25)
+    at runWithFiberInDEV (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at emitPendingHydrationWarnings (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:3438:13)
+    at completeWork (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:6885:102)
+    at runWithFiberInDEV (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:131)
+    at completeUnitOfWork (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9622:23)
+    at performUnitOfWork (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9557:28)
+    at workLoopConcurrentByScheduler (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9551:58)
+    at renderRootConcurrent (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9534:71)
+    at performWorkOnRoot (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:9061:150)
+    at performWorkOnRootViaSchedulerTask (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10255:9)
+    at MessagePort.performWorkUntilDeadline (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_1amofcm._.js:2647:64) (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:3439:25)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489:13)
+Request body exceeded 10MB for /api/editor/upload. Only the first 10MB will be available unless configured. See https://nextjs.org/docs/app/api-reference/config/next-config-js/middlewareClientMaxBodySize for more details.
+[Editor Upload API] Falha no upload: {
+  file: 'desconhecido',
+  message: 'Failed to parse body as FormData.',
+  stack: 'TypeError: Failed to parse body as FormData.\n' +
+    '    at parsingError (node:internal/deps/undici/undici:6655:14)\n' +
+    '    at multipartFormDataParser (node:internal/deps/undici/undici:6427:19)\n' +
+    '    at node:internal/deps/undici/undici:6920:34\n' +
+    '    at successSteps (node:internal/deps/undici/undici:6967:27)\n' +
+    '    at readAllBytes (node:internal/deps/undici/undici:5890:13)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)'
+}
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_1ybzpk2._.js:2489:13)
+[browser] [Preview] Falha ao carregar mídia: Video-5.mp4 blob:http://localhost:3000/0d65bf6b-4d61-4e7a-95dc-729987e1eb57 VIDEO 
+    at handleSourceError (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/src_components_editor_Preview_tsx_1qf_2ny._.js:988:21)
+    at executeDispatch (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10329:13)
+    at runWithFiberInDEV (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:965:74)
+    at processDispatchQueue (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10355:41)
+    at <unknown> (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10633:13)
+    at batchedUpdates$1 (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:2253:44)
+    at dispatchEventForPluginEventSystem (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:10431:9)
+    at dispatchEvent (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/node_modules_next_dist_compiled_react-dom_096_9a-._.js:13002:37) (file://C:/Users/Win 10/OneDrive/Desktop/git/nexia video/contenthub/.next/dev/static/chunks/src_components_editor_Preview_tsx_1qf_2ny._.js:988:21)

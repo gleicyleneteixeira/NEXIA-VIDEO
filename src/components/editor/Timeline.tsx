@@ -896,7 +896,7 @@ const trimGestureRef = useRef(false);
   return (
     <div
       ref={containerRef}
-      className="flex flex-col h-full bg-[#0a0a12] border-t border-[#1e1e2e] select-none"
+      className="flex flex-col h-full w-full bg-[#0a0a12] border-t border-[#1e1e2e] select-none"
       onMouseMove={isDraggingPlayhead ? handlePlayheadDrag : undefined}
       onMouseUp={() => setIsDraggingPlayhead(false)}
       onContextMenu={(e) => e.preventDefault()}
