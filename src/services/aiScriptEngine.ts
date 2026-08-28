@@ -64,10 +64,31 @@ Crie ${params.count} variações com abordagens psicológicas totalmente distint
 - BENEFÍCIO / TRANSFORMAÇÃO: por que isso importa para o espectador.
 - CTA: chamada de ação SUBTIL e NATURAL (uma única ação por vídeo). NUNCA diga "curta, comente e compartilhe" juntos.
 
-=== REGRA MÁXIMA DE COMPATIBILIDADE UNIVERSAL DOS BLOCOS ===
-Cada bloco deve funcionar de forma AUTÔNOMA.
-NÃO use conectores pendentes ("como eu disse no gancho", "esse método que citei", "a moça do vídeo").
-Garanta que QUALQUER Gancho possa se conectar com QUALQUER Dor, Desenvolvimento, Solução, Benefício e CTA deste mesmo lote sem perder o sentido.
+=== COESÃO COMBINATÓRIA RÍGIDA (QUEBRA-CABEÇA 100% INTERCAMBIÁVEL) ===
+
+REGRA 1 — SUBASSUNTO ÚNICO POR LOTE:
+- Todas as variações deste MESMO lote DEVEM abordar rigorosamente o MESMO subassunto/objeto específico.
+- ❌ ERRADO: Gancho fala de "Atenção Concentrada", Dor fala de "Memória Rápida" e Solução fala de "Simulado Geral" (quebra o quebra-cabeça).
+- ✅ CERTO: Gancho, Dor, Solução e CTA de TODO o lote focam 100% em um único subassunto âncora (ex: "teste de memória rápida do psicotécnico").
+- Defina o "subassunto âncora" ANTES de gerar e replique-o em TODAS as variações do lote.
+
+REGRA 2 — AUTONOMIA DE BLOCO (PROIBIDO ANTECEDENTE DEPENDENTE):
+- Nenhum bloco pode depender da gramática ou de palavras ditas no bloco anterior.
+- PROIBIDO iniciar blocos com: "Ele...", "Esse teste...", "Como vimos...", "Por causa disso...", "Um deles...".
+- OBRIGATÓRIO: TODO bloco que mencione o objeto principal deve nomeá-lo EXPLICITAMENTE (ex: "No teste de memória rápida...", "Para passar no teste de memória rápida...").
+- Cada bloco (hook, pain, development, solution, benefit, cta) deve fazer sentido lido isoladamente.
+
+REGRA 3 — MATRIZ DE TRANSIÇÃO (PONTE DE EXPECTATIVA):
+- Fim do GANCHO (Slot 1): abre tensão/curiosidade sem prometer uma resposta gramatical específica.
+- Início da DOR (Slot 2): assume e aprofunda a dor sobre o assunto do lote, de forma direta.
+- Início da SOLUÇÃO (Slot 3): apresenta o método/simulado como resposta DIRETA para a dor daquele assunto.
+- Início do CTA (Slot 4): chamada de ação direta e autônoma, relacionada ao tema.
+
+REGRA 4 — VALIDAÇÃO CRUZADA OBRIGATÓRIA ANTES DE ENTREGAR:
+Antes de retornar o JSON, faça o "teste mental" das combinações cruzadas da matriz:
+  • [Gancho 1] + [Dor 3] + [Solução 2] + [CTA 1]
+  • [Gancho 3] + [Dor 1] + [Solução 3] + [CTA 2]
+Se em QUALQUER combinação houver troca de assunto ou quebra de sentido gramatical, REESCREVA os blocos afetados até a intercambiabilidade ser perfeita.
 
 === FORMATO DE SAÍDA (JSON ESTRITO) ===
 Retorne rigorosamente um array JSON com ${params.count} variações. Cada objeto deve conter:
