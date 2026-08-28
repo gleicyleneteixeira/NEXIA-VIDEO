@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TimelineItem } from "@/lib/editor";
 import { useVideoThumbnails } from "@/lib/editor/useVideoThumbnails";
 import { AudioDecodeService } from "@/services/audioDecodeService";
@@ -74,55 +74,84 @@ function seededBars(seed: string, count: number, min = 0.18, max = 1): number[] 
   return bars;
 }
 
-function WaveformBars({
-  seed,
-  width,
-  mode,
-  color,
-  peaks,
-}: {
-  seed: string;
-  width: number;
-  mode: "fill" | "overlay";
-  color: string;
-  peaks?: number[] | null;
-}) {
-  const count = Math.max(8, Math.floor(width / 3));
-  const procedural = useMemo(() => seededBars(seed, count), [seed, count]);
-  const bars = peaks && peaks.length >= 2 ? peaks : procedural;
+/**
+ * Desenha a waveform em <canvas>, centralizada verticalmente na faixa.
+ * Cada barra tem altura proporcional ao pico real do áudio (0..1); picos
+ * abaixo do limiar de silêncio caem para uma linha mínima de 1px no centro.
+ */
+function drawWaveformBars(
+  ctx: CanvasRenderingContext2D,
+  data: number[],
+  width: number,
+  height: number,
+  barColor: string,
+) {
+  ctx.clearRect(0, 0, width, height);
+  if (data.length === 0 || width <= 0 || height <= 0) return;
 
-  return (
-    <div className="absolute inset-0 flex items-center justify-between gap-px overflow-hidden">
-      {bars.map((b, i) => (
-        <div
-          key={i}
-          className="w-[2px] rounded-full"
-          style={{
-            height: `${Math.round(b * 100)}%`,
-            backgroundColor: mode === "fill" ? color : "#22c55e",
-            opacity: mode === "fill" ? 0.85 : 0.9,
-          }}
-        />
-      ))}
-    </div>
-  );
+  const barWidth = 2;
+  const barGap = 1;
+  const totalBars = Math.max(1, Math.floor(width / (barWidth + barGap)));
+  const step = data.length / totalBars;
+  const centerY = height / 2;
+
+  ctx.fillStyle = barColor;
+  for (let i = 0; i < totalBars; i++) {
+    const peak = data[Math.floor(i * step)] || 0;
+    const minBar = 1;
+    const maxBar = height * 0.85;
+    const barHeight = Math.max(minBar, peak * maxBar);
+    const x = i * (barWidth + barGap);
+    const y = centerY - barHeight / 2;
+    ctx.fillRect(x, y, barWidth, barHeight);
+  }
 }
 
-/** Carrega peaks reais de áudio (Web Audio API) e cai para waveform procedural se falhar. */
+/** Carrega peaks reais de áudio (Web Audio API) e desenha a waveform em canvas. */
 function ClipWaveform({ src, seed, width, mode, color }: { src?: string; seed: string; width: number; mode: "fill" | "overlay"; color: string }) {
-  const count = Math.max(8, Math.floor(width / 3));
+  const count = Math.max(64, Math.floor(width / 3));
   const [peaks, setPeaks] = useState<number[] | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
-    let cancelled = false;
     if (!src) return;
+    let cancelled = false;
     AudioDecodeService.getAudioPeaks(src, count)
       .then((p) => { if (!cancelled) setPeaks(p.length ? p : null); })
       .catch(() => { if (!cancelled) setPeaks(null); });
     return () => { cancelled = true; };
   }, [src, count]);
 
-  return <WaveformBars seed={seed} width={width} mode={mode} color={color} peaks={peaks} />;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || size.w === 0 || size.h === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.floor(size.w * dpr));
+    canvas.height = Math.max(1, Math.floor(size.h * dpr));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const data = peaks && peaks.length >= 2 ? peaks : seededBars(seed, Math.max(8, Math.floor(size.w / 3)));
+    drawWaveformBars(ctx, data, size.w, size.h, mode === "fill" ? color : "#22c55e");
+  }, [peaks, size, seed, mode, color]);
+
+  return (
+    <div ref={containerRef} className="absolute inset-0 overflow-hidden">
+      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+    </div>
+  );
 }
 
 function KindGlyph({ kind }: { kind: ClipVisualKind }) {
