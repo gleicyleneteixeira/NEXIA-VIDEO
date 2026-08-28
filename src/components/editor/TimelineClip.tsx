@@ -19,6 +19,36 @@ export function getClipVisualKind(item: TimelineItem): ClipVisualKind {
   }
 }
 
+/**
+ * Largura fixa de cada bloco de frame do filmstrip (estilo CapCut):
+ * altura do clipe (faixa 64px - padding 8px ≈ 56px) x aspecto 16:9.
+ * Nunca usamos % nem w-full para evitar distorção/esticamento horizontal.
+ */
+const FILMSTRIP_THUMB_HEIGHT = 56;
+const FILMSTRIP_THUMB_WIDTH = Math.round(FILMSTRIP_THUMB_HEIGHT * (16 / 9));
+const MAX_FILMSTRIP_BLOCKS = 400;
+
+/**
+ * Distribui os frames de origem (já amostrados uniformemente ao longo do clipe)
+ * em `count` blocos de largura fixa, preenchendo sequencialmente a faixa.
+ */
+function buildFilmstripFrames(
+  source: { url: string }[],
+  clipWidthInPixels: number,
+): { url: string }[] {
+  if (source.length === 0) return [];
+  const count = Math.max(
+    1,
+    Math.min(Math.ceil(clipWidthInPixels / FILMSTRIP_THUMB_WIDTH), MAX_FILMSTRIP_BLOCKS),
+  );
+  const frames: { url: string }[] = [];
+  for (let i = 0; i < count; i++) {
+    const srcIndex = Math.min(source.length - 1, Math.floor((i / count) * source.length));
+    frames.push(source[srcIndex]);
+  }
+  return frames;
+}
+
 const KIND_PALETTE: Record<ClipVisualKind, { base: string; solid: string; selected: string }> = {
   video: { base: "#1f2233", solid: "#161826", selected: "#8b5cf6" },
   audio: { base: "#0b3d2e", solid: "#0a2f24", selected: "#34d399" },
@@ -196,12 +226,12 @@ export default function TimelineClip({
       {/* ── Conteúdo por tipo de mídia ─────────────────────────────── */}
       {kind === "video" && showFilmstrip && thumbnails.length > 0 ? (
         <div className="absolute inset-0 flex overflow-hidden rounded-md pointer-events-none">
-          {thumbnails.map((thumb, idx) => (
+          {buildFilmstripFrames(thumbnails, width).map((thumb, idx) => (
             <div
               key={idx}
               className="h-full flex-shrink-0 bg-black/30"
               style={{
-                width: `${100 / thumbnails.length}%`,
+                width: `${FILMSTRIP_THUMB_WIDTH}px`,
                 backgroundImage: `url(${thumb.url})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
