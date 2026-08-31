@@ -40,7 +40,7 @@ async function downloadTikTok(url: string, mode: "audio" | "video"): Promise<{ b
 
   if (!downloadUrl) throw new Error("URL de download nao encontrada no TikTok.");
 
-  const fullUrl = downloadUrl.startsWith("http") ? `https://www.tikwm.com${downloadUrl}` : downloadUrl;
+  const fullUrl = downloadUrl.startsWith("http") ? downloadUrl : `https://www.tikwm.com${downloadUrl}`;
   const mediaResp = await fetch(fullUrl, {
     headers: { "User-Agent": UA, Referer: "https://www.tikwm.com/" },
     signal: AbortSignal.timeout(60000),
