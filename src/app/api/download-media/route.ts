@@ -2,80 +2,133 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 120;
 
-const COBALT_API = "https://api.cobalt.tools";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
-async function downloadWithCobalt(url: string, mode: "audio" | "video"): Promise<{ downloadUrl: string; filename: string }> {
-  const resp = await fetch(`${COBALT_API}/`, {
+const COBALT_INSTANCES = [
+  "https://api.cobalt.tools",
+  "https://cobalt-api.kwiatekmiki.com",
+  "https://api-dl.cgm.rs",
+  "https://dl.khyernet.xyz",
+  "https://cobalt.canine.tools",
+];
+
+function isTikTokUrl(url: string): boolean {
+  return /tiktok\.com\//.test(url) || /vm\.tiktok\.com\//.test(url);
+}
+
+function isYouTubeUrl(url: string): boolean {
+  return /youtube\.com\//.test(url) || /youtu\.be\//.test(url);
+}
+
+function isInstagramUrl(url: string): boolean {
+  return /instagram\.com\//.test(url);
+}
+
+function isFacebookUrl(url: string): boolean {
+  return /facebook\.com\//.test(url) || /fb\.watch\//.test(url);
+}
+
+async function tryCobaltInstance(
+  instance: string,
+  url: string,
+  mode: "audio" | "video"
+): Promise<{ downloadUrl: string; filename: string }> {
+  const resp = await fetch(`${instance}/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Accept": "application/json",
+      Accept: "application/json",
       "User-Agent": UA,
     },
     body: JSON.stringify({
       url,
-      downloadMode: mode,
+      downloadMode: mode === "audio" ? "audio" : "auto",
       audioFormat: mode === "audio" ? "mp3" : undefined,
       filenameStyle: "pretty",
+      videoQuality: "1080",
     }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(30000),
   });
 
-  if (!resp.ok) {
-    const errBody = await resp.text().catch(() => "");
-    if (resp.status === 400) {
-      throw new Error("URL invalida ou plataforma nao suportada.");
-    }
-    if (resp.status === 403) {
-      throw new Error("Video privado ou restrito.");
-    }
-    if (resp.status === 429) {
-      throw new Error("Muitas requisicoes. Aguarde alguns minutos e tente novamente.");
-    }
-    if (resp.status === 500) {
-      throw new Error("Servidor de download temporariamente indisponivel. Tente novamente em alguns minutos.");
-    }
-    throw new Error(`Erro ao baixar midia (HTTP ${resp.status}).`);
-  }
-
-  const data = await resp.json();
+  const data = await resp.json().catch(() => null);
+  if (!data) throw new Error("Resposta invalida do servidor.");
 
   if (data.status === "error") {
-    const msg = data.error?.code || data.error || "Erro desconhecido";
-    if (msg === "error.fetch") throw new Error("Nao foi possivel acessar o video. Verifique a URL.");
-    if (msg === "error.unavailable") throw new Error("Video nao encontrado ou indisponivel.");
-    if (msg === "error.rate-limited") throw new Error("Muitas requisicoes. Aguarde alguns minutos.");
-    if (msg === "error.tiktok-caption-missing") throw new Error("TikTok: legenda nao disponivel.");
-    throw new Error(`Falha ao baixar: ${msg}`);
+    const code = data.error?.code || data.error || "";
+    if (code === "error.api.unauthorized") throw new Error("API_AUTH_REQUIRED");
+    throw new Error(code || "Erro desconhecido");
   }
 
-  if (data.status === "tunnel") {
+  if (data.status === "tunnel" && data.url) {
     return { downloadUrl: data.url, filename: data.filename || `download_${Date.now()}` };
   }
 
-  if (data.status === "redirect") {
+  if (data.status === "redirect" && data.url) {
     return { downloadUrl: data.url, filename: data.filename || `download_${Date.now()}` };
+  }
+
+  if (data.status === "picker" && data.picker && data.picker.length > 0) {
+    const first = data.picker[0];
+    if (first.url) {
+      return { downloadUrl: first.url, filename: data.pickerAudioFilename || data.filename || `download_${Date.now()}` };
+    }
   }
 
   if (data.url) {
     return { downloadUrl: data.url, filename: data.filename || `download_${Date.now()}` };
   }
 
-  throw new Error("Resposta inesperada do servidor de download.");
+  throw new Error("Resposta inesperada");
+}
+
+async function downloadWithCobalt(url: string, mode: "audio" | "video"): Promise<{ downloadUrl: string; filename: string }> {
+  const errors: string[] = [];
+
+  for (const instance of COBALT_INSTANCES) {
+    try {
+      const result = await tryCobaltInstance(instance, url, mode);
+      return result;
+    } catch (err: any) {
+      const msg = err?.message || "unknown";
+      if (msg === "API_AUTH_REQUIRED") continue;
+      errors.push(`${instance}: ${msg}`);
+    }
+  }
+
+  throw new Error(
+    `Nao foi possivel baixar este video. Todas asinstancias de download retornaram erro. ` +
+    `Tente novamente mais tarde ou use outro link.`
+  );
+}
+
+async function resolveTikTokUrl(url: string): Promise<string> {
+  if (!isTikTokUrl(url)) return url;
+  try {
+    const resp = await fetch(url, {
+      method: "HEAD",
+      headers: { "User-Agent": UA },
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    });
+    return resp.url || url;
+  } catch {
+    return url;
+  }
 }
 
 function getVideoTitleFallback(url: string): string {
   try {
     const u = new URL(url);
-    if (u.hostname.includes("youtube.com") || u.hostname === "youtu.be") {
-      return `video_youtube_${Date.now()}`;
-    }
-    if (u.hostname.includes("tiktok.com")) {
-      return `video_tiktok_${Date.now()}`;
-    }
+    if (isYouTubeUrl(url)) return `video_youtube_${Date.now()}`;
+    if (isTikTokUrl(url)) return `video_tiktok_${Date.now()}`;
+    if (isInstagramUrl(url)) return `video_instagram_${Date.now()}`;
+    if (isFacebookUrl(url)) return `video_facebook_${Date.now()}`;
   } catch {}
   return `download_${Date.now()}`;
+}
+
+function getSupportedPlatform(url: string): boolean {
+  return isYouTubeUrl(url) || isTikTokUrl(url) || isInstagramUrl(url) || isFacebookUrl(url);
 }
 
 export async function POST(request: NextRequest) {
@@ -90,7 +143,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Formato invalido. Use 'video' ou 'audio'." }, { status: 400 });
     }
 
-    const { downloadUrl, filename } = await downloadWithCobalt(url, format);
+    if (!getSupportedPlatform(url)) {
+      return NextResponse.json(
+        { error: "Plataforma nao suportada. Use links do YouTube, TikTok, Instagram ou Facebook." },
+        { status: 400 }
+      );
+    }
+
+    const resolvedUrl = await resolveTikTokUrl(url);
+    const { downloadUrl, filename } = await downloadWithCobalt(resolvedUrl, format);
 
     const mediaResp = await fetch(downloadUrl, {
       headers: { "User-Agent": UA },
@@ -106,7 +167,7 @@ export async function POST(request: NextRequest) {
 
     const ext = format === "audio" ? "mp3" : "mp4";
     const contentType = format === "audio" ? "audio/mpeg" : "video/mp4";
-    const title = filename.replace(/[^a-zA-Z0-9._-]/g, "_").substring(0, 80) || getVideoTitleFallback(url);
+    const title = (filename || "").replace(/[^a-zA-Z0-9._-]/g, "_").substring(0, 80) || getVideoTitleFallback(url);
 
     const headers = new Headers();
     headers.set("Content-Type", contentType);
@@ -133,6 +194,8 @@ export async function POST(request: NextRequest) {
       userMessage = "Muitas requisicoes. Aguarde alguns minutos e tente novamente.";
     } else if (lowerMsg.includes("servidor")) {
       userMessage = "Servidor de download temporariamente indisponivel. Tente novamente.";
+    } else if (lowerMsg.includes("nao suportada")) {
+      userMessage = "Plataforma nao suportada. Use links do YouTube, TikTok, Instagram ou Facebook.";
     }
 
     return NextResponse.json({ error: userMessage }, { status: 500 });
