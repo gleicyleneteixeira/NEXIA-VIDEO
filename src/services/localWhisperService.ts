@@ -4,13 +4,11 @@
  * Transcricao de video/audio 100% local no navegador.
  *
  * O motor @xenova/transformers e carregado de um CDN (jsDelivr) como ESM
- * puro, via `new Function("url", "return import(url)")` — sem passar pela
- * instrumentacao do Turbopack/Next.js.
- *
- * Cache permanente: com `env.useBrowserCache = true` o Transformers.js grava
- * os arquivos do modelo (ONNX quantizado ~39MB) no CacheStorage do navegador,
- * baixando apenas na primeira execucao. A instance do pipeline fica em
- * memoria (por modelo) enquanto a pagina estiver aberta.
+ * puro, via `new Function("url", "return import(url)")`. Esse carregador
+ * roda diretamente no motor V8 do navegador, sem passar pela instrumentacao
+ * do Turbopack/Next.js — eliminando tanto "Cannot convert undefined or null
+ * to object" (empacotamento WASM/ONNX) quanto
+ * "__turbopack_context__.x is not a function".
  */
 
 const TRANSFORMERS_CDN_URL =
@@ -30,28 +28,15 @@ export interface WhisperProgress {
   file?: string;
 }
 
-type TranscriberOptions = {
-  language?: string;
-  task?: string;
-  chunk_length_s?: number;
-  stride_length_s?: number;
-};
-
 type Transcriber = (
   audio: Float32Array,
-  options?: TranscriberOptions
+  options?: Record<string, unknown>
 ) => Promise<string | { text?: string }>;
 
 interface TransformersEnv {
   allowLocalModels: boolean;
   useBrowserCache: boolean;
-  allowRemoteModels: boolean;
-  backends: {
-    onnx: {
-      wasm: { proxy?: boolean };
-      logLevel?: string;
-    };
-  };
+  backends: { onnx: { wasm: { proxy?: boolean } } };
 }
 
 interface TransformersModule {
@@ -59,10 +44,7 @@ interface TransformersModule {
   pipeline: (
     task: string,
     model: string,
-    options?: {
-      progress_callback?: (p: WhisperProgress) => void;
-      quantized?: boolean;
-    }
+    options?: { progress_callback?: (p: WhisperProgress) => void }
   ) => Promise<Transcriber>;
 }
 
@@ -87,35 +69,30 @@ async function loadTransformers(): Promise<TransformersModule> {
     const mod = (await nativeImport(TRANSFORMERS_CDN_URL)) as TransformersModule;
 
     mod.env.allowLocalModels = false;
-    mod.env.allowRemoteModels = true;
-    mod.env.useBrowserCache = true; // persiste o modelo no CacheStorage (sem re-download no F5)
-    if (mod.env.backends?.onnx) {
-      mod.env.backends.onnx.logLevel = "error"; // silencia logs internos do ONNX
-    }
+    mod.env.useBrowserCache = true;
     mod.env.backends.onnx.wasm.proxy = true;
 
     transformersModule = mod;
     return mod;
   } catch (error) {
-    console.error("Erro ao inicializar Transformers Web:", error);
+    console.error("Falha ao carregar Transformers via ESM nativo:", error);
     throw new Error("Nao foi possivel carregar o motor de IA no navegador.");
   }
 }
 
-async function getPipeline(
+async function getTranscriber(
   model: WhisperModelId,
   onProgress?: (p: WhisperProgress) => void
 ): Promise<Transcriber> {
-  const transformers = await loadTransformers();
-  if (!transformers) throw new Error("Modulos Web indisponiveis.");
-
   if (!transcriberCache.has(model)) {
     transcriberCache.set(
       model,
-      transformers.pipeline("automatic-speech-recognition", model, {
-        progress_callback: onProgress,
-        quantized: true, // garante a versao quantizada ultra-compacta
-      })
+      (async () => {
+        const transformers = await loadTransformers();
+        return transformers.pipeline("automatic-speech-recognition", model, {
+          progress_callback: onProgress,
+        });
+      })()
     );
   }
   return transcriberCache.get(model) as Promise<Transcriber>;
@@ -161,22 +138,22 @@ export const LocalWhisperService = {
         );
       }
 
-      onProgress?.(30, "Verificando a IA em cache...");
+      onProgress?.(25, "Inicializando o motor Whisper no navegador...");
 
-      const pipe = await getPipeline(modelName, (p) => {
+      const transcriber = await getTranscriber(modelName, (p) => {
         if (p.status === "progress" && p.total && p.loaded !== undefined) {
-          const pct = Math.round((p.loaded / p.total) * 40) + 30;
-          onProgress?.(pct, `Carregando modelo Whisper (${pct}%)...`);
+          const pct = Math.round((p.loaded / p.total) * 35) + 35;
+          onProgress?.(pct, `Baixando modelo Whisper (${pct}%)...`);
         }
       });
 
-      if (!pipe) {
+      if (!transcriber) {
         throw new Error("Falha ao instanciar o pipeline Web.");
       }
 
-      onProgress?.(70, "Transcrevendo a fala em portugues...");
+      onProgress?.(75, "Transcrevendo a fala em portugues...");
 
-      const output = await pipe(audioData, {
+      const output = await transcriber(audioData, {
         language: "portuguese",
         task: "transcribe",
         chunk_length_s: 30,

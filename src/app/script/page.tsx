@@ -13,6 +13,7 @@ import {
   FileText,
   Plus,
   Trash2,
+  Download,
   RefreshCw,
   CheckCircle2,
   Clock,
@@ -35,6 +36,7 @@ import type { SavedScriptProject } from "@/services/scriptHistoryService";
 import ScriptHistoryPanel from "@/components/ScriptHistoryPanel";
 import { Variation } from "@/components/ContentCard";
 import ScriptVariationView from "@/components/ScriptVariationView";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 
 const ScriptTranscriptionTab = dynamic(
   () => import("@/components/ScriptTranscriptionTab"),
@@ -44,6 +46,32 @@ const ScriptTranscriptionTab = dynamic(
       <div className="glass-card rounded-[var(--radius)] p-8 flex items-center justify-center gap-3 text-[var(--text-secondary)]">
         <Loader2 className="w-5 h-5 animate-spin" />
         Carregando transcricao...
+      </div>
+    ),
+  }
+);
+
+const MediaGalleryTab = dynamic(
+  () => import("@/components/MediaGalleryTab"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="glass-card rounded-[var(--radius)] p-8 flex items-center justify-center gap-3 text-[var(--text-secondary)]">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        Carregando galeria...
+      </div>
+    ),
+  }
+);
+
+const DownloadMediaTab = dynamic(
+  () => import("@/components/DownloadMediaTab"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="glass-card rounded-[var(--radius)] p-8 flex items-center justify-center gap-3 text-[var(--text-secondary)]">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        Carregando download...
       </div>
     ),
   }
@@ -61,7 +89,7 @@ const durations = [
   { value: "15s", label: "15s", desc: "Ultra-rapido", emoji: "⚡" },
   { value: "30s", label: "30s", desc: "Padrao Reels/TikTok", emoji: "📱" },
   { value: "60s", label: "60s", desc: "Desenvolvimento Completo", emoji: "🎬" },
-  { value: "90s", label: "90s", desc: "Aprofundado", emoji: "📖" },
+  { value: "90s_plus", label: "90s+ (Aprofundado / Sem Limite)", desc: "Sem limite", emoji: "📖" },
 ];
 
 // Simple Toast component
@@ -114,6 +142,19 @@ export default function ScriptPage() {
 
   // Step 2 — Generation
   const [theme, setTheme] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
+
+  const speech = useSpeechToText({
+    lang: "pt-BR",
+    onTranscript: (text, isFinal) => {
+      if (isFinal) {
+        setTheme((prev) => (prev.trim() ? prev.trim() + " " + text : text));
+        setInterimTranscript("");
+      } else {
+        setInterimTranscript(text);
+      }
+    },
+  });
   const [scriptMode, setScriptMode] = useState<"idea" | "extracted_audio" | "raw_text">("idea");
   const [quantity, setQuantity] = useState(3);
   const [duracao, setDuracao] = useState("30s");
@@ -125,7 +166,7 @@ export default function ScriptPage() {
   const [viewMode, setViewMode] = useState<"video" | "fragmented">("video");
   const [isMounted, setIsMounted] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
-  const [subTab, setSubTab] = useState<"create" | "transcribe" | "history">("create");
+  const [subTab, setSubTab] = useState<"create" | "transcribe" | "download" | "gallery" | "history">("create");
   const [historyRefresh, setHistoryRefresh] = useState(0);
 
   useEffect(() => {
@@ -258,8 +299,8 @@ export default function ScriptPage() {
           solution: sol,
           development: [pain, sol].filter(Boolean).join("\n\n") || current.development,
           cta,
-          seoCaption: [hook, pain, sol, `👉 ${cta}`].filter(Boolean).join("\n\n"),
-          caption: [hook, pain, sol, `👉 ${cta}`].filter(Boolean).join("\n\n"),
+          seoCaption: (refined as Record<string, string>).fullScriptText || [hook, pain, sol, cta].filter(Boolean).join("\n\n"),
+          caption: (refined as Record<string, string>).fullScriptText || [hook, pain, sol, cta].filter(Boolean).join("\n\n"),
         };
         return next;
       });
@@ -617,6 +658,28 @@ export default function ScriptPage() {
               Extrair de Video/Audio
             </button>
             <button
+              onClick={() => setSubTab("download")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+                subTab === "download"
+                  ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
+                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+              }`}
+            >
+              <Download className="w-4 h-4" />
+              Baixar Midia
+            </button>
+            <button
+              onClick={() => setSubTab("gallery")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+                subTab === "gallery"
+                  ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
+                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Galeria
+            </button>
+            <button
               onClick={() => setSubTab("history")}
               className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
                 subTab === "history"
@@ -625,7 +688,7 @@ export default function ScriptPage() {
               }`}
             >
               <History className="w-4 h-4" />
-              Historico de Roteiros
+              Historico
             </button>
           </div>
 
@@ -688,16 +751,56 @@ export default function ScriptPage() {
                 </button>
               </div>
 
-              <textarea
-                value={theme}
-                onChange={(e) => setTheme(e.target.value)}
-                placeholder={
-                  scriptMode === "idea"
-                    ? "Ex: 3 erros que destroem seu trafego pago..."
-                    : "Cole a transcricao do video viral que ja funcionou..."
-                }
-                className="input-field w-full h-28 px-4 py-3 rounded-[12px] resize-none"
-              />
+              <div className="relative">
+                <textarea
+                  value={theme}
+                  onChange={(e) => setTheme(e.target.value)}
+                  placeholder={
+                    scriptMode === "idea"
+                      ? "Ex: 3 erros que destroem seu trafego pago..."
+                      : "Cole a transcricao do video viral que ja funcionou..."
+                  }
+                  className="input-field w-full h-28 px-4 py-3 pr-12 rounded-[12px] resize-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!speech.isSupported) {
+                      alert("Reconhecimento de voz nao suportado neste navegador. Use Chrome ou Edge.");
+                      return;
+                    }
+                    speech.toggle();
+                  }}
+                  title={
+                    speech.isListening
+                      ? "Ouvindo... Fale sua ideia (clique para parar)"
+                      : "Ditar por voz (WhatsApp-style)"
+                  }
+                  disabled={!speech.isSupported}
+                  className={`absolute top-3 right-3 w-9 h-9 flex items-center justify-center rounded-full transition-all ${
+                    speech.isListening
+                      ? "bg-red-500 text-white pulse-rec"
+                      : speech.isSupported
+                        ? "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-red-400 hover:border-red-400/50"
+                        : "bg-[var(--surface)] border border-[var(--border)] text-zinc-600 cursor-not-allowed"
+                  }`}
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+              </div>
+              {speech.isListening && (
+                <div className="mt-2 text-[11px] text-red-400 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  {interimTranscript ? (
+                    <span className="italic truncate">&ldquo;{interimTranscript}&rdquo;</span>
+                  ) : (
+                    <span>Ouvindo... Fale sua ideia</span>
+                  )}
+                </div>
+              )}
+              {speech.error && (
+                <p className="mt-2 text-[11px] text-red-400">{speech.error}</p>
+              )}
               <div className="mt-2 p-2.5 rounded-[8px] bg-purple-950/30 border border-purple-800/40 text-[11px] text-purple-200/80 flex items-start gap-2">
                 <span className="text-sm shrink-0">💡</span>
                 <div>
@@ -905,6 +1008,10 @@ export default function ScriptPage() {
             onUseAsBriefing={handleTranscriptionAsBriefing}
             onSendToContentCreator={handleSendTranscriptToContentCreator}
           />
+        ) : subTab === "download" ? (
+          <DownloadMediaTab />
+        ) : subTab === "gallery" ? (
+          <MediaGalleryTab />
         ) : (
           <ScriptHistoryPanel refreshToken={historyRefresh} onLoad={handleLoadProject} />
         )}
