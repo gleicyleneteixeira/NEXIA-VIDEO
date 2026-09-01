@@ -389,6 +389,8 @@ export default function MassProductionPage() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [transition, setTransition] = useState<"none" | "fade" | "wipe">("none");
   const [transitionDuration, setTransitionDuration] = useState(0.5);
+  const [cloudSaveEnabled, setCloudSaveEnabled] = useState(false);
+  const [autoDownloadEnabled, setAutoDownloadEnabled] = useState(false);
 
   const [queueStatus, setQueueStatus] = useState<QueueStatus>({
     isProcessing: false, current: 0, total: 0, percentage: 0, eta: "0:00",
@@ -600,19 +602,6 @@ export default function MassProductionPage() {
     }
   };
 
-  const uploadGeneratedVideo = async (blob: Blob, filename: string): Promise<string | null> => {
-    try {
-      const fd = new FormData();
-      fd.append("file", blob, filename);
-      const res = await fetch("/api/editor/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      return data?.success && typeof data.url === "string" ? data.url : null;
-    } catch (err) {
-      console.warn("Falha ao enviar video para armazenamento permanente:", err);
-      return null;
-    }
-  };
-
   const persistGalleryItem = async (video: RenderedVideo, supabaseId: string) => {
     try {
       const parts = video.variation.id.replace("var_", "").split("_").map(Number);
@@ -746,60 +735,49 @@ export default function MassProductionPage() {
           blob: result.blob, duration: result.duration, createdAt: new Date(),
         });
 
-        // URL permanente (MinIO/S3) — com fallback para blob URL local
-        let storedUrl = result.url;
-        try {
-          const permanentUrl = await uploadGeneratedVideo(
-            result.blob,
-            `Video_${String(videoId).padStart(2, "0")}.mp4`
+        // Upload para Supabase Storage (condicional — ligado pelo toggle)
+        let cloudUrl: string | null = null;
+        let supabaseId: string | null = null;
+        if (cloudSaveEnabled) {
+          try {
+            cloudUrl = await uploadVideoToSupabase(
+              result.blob,
+              `Video_${String(videoId).padStart(2, "0")}.mp4`
+            );
+          } catch (uploadErr) {
+            console.warn("[MassProduction] Upload Supabase falhou:", uploadErr);
+          }
+          const storedUrl = cloudUrl || result.url;
+          supabaseId = await saveRenderedVideo(
+            { id: videoId, variation, blobUrl: storedUrl, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
+            storedUrl
           );
-          if (permanentUrl) storedUrl = permanentUrl;
-        } catch (uploadErr) {
-          console.warn("[MassProduction] Upload S3 falhou, usando blob URL local:", uploadErr);
-        }
-
-        // [DESABILITADO TEMPORARIAMENTE] Upload para o Supabase Storage
-        // let cloudUrl: string | null = null;
-        // try {
-        //   cloudUrl = await uploadVideoToSupabase(
-        //     result.blob,
-        //     `Video_${String(videoId).padStart(2, "0")}.mp4`
-        //   );
-        // } catch (uploadErr) {
-        //   const errMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
-        //   console.error("[MassProduction] Falha no upload Supabase Storage:", uploadErr);
-        // }
-
-        // [DESABILITADO TEMPORARIAMENTE] Salvar registro no Supabase
-        // const supabaseId = await saveRenderedVideo(
-        //   { id: videoId, variation, blobUrl: storedUrl, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
-        //   storedUrl
-        // );
-        const supabaseId = null;
-
-        // Persistência local no IndexedDB (blobs + miniatura)
-        if (supabaseId) {
-          void persistGalleryItem(
-            { id: videoId, supabaseId, variation, blobUrl: result.url, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false, savedToDB: true },
-            supabaseId
-          );
+          if (supabaseId) {
+            void persistGalleryItem(
+              { id: videoId, supabaseId, variation, blobUrl: result.url, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false, savedToDB: true },
+              supabaseId
+            );
+          }
         }
 
         setRenderedVideos((prev) => prev.map((v) =>
           v.id === videoId ? { ...v, blobUrl: result.url, blob: result.blob, duration: result.duration,
-            durationFormatted: formatDurationLong(result.duration), status: "ready", progress: 100, savedToDB: true } : v
+            durationFormatted: formatDurationLong(result.duration), status: "ready", progress: 100, savedToDB: true,
+            supabaseId: supabaseId || undefined, videoUrl: cloudUrl ?? undefined, isCloud: !!cloudUrl } : v
         ));
 
-        // Auto-download video immediately upon completion
-        try {
-          const link = document.createElement("a");
-          link.href = result.url;
-          link.download = `Video_${String(videoId).padStart(2, "0")}.mp4`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        } catch (downloadErr) {
-          console.error("Erro ao tentar baixar o vídeo automaticamente:", downloadErr);
+        // Auto-download (condicional)
+        if (autoDownloadEnabled) {
+          try {
+            const link = document.createElement("a");
+            link.href = result.url;
+            link.download = `Video_${String(videoId).padStart(2, "0")}.mp4`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          } catch (downloadErr) {
+            console.error("Erro ao tentar baixar o vídeo automaticamente:", downloadErr);
+          }
         }
       } catch (error) {
         console.error(`Error rendering video ${videoId}:`, error);
@@ -1194,6 +1172,35 @@ export default function MassProductionPage() {
                 <span className="text-amber-400 text-sm">⚠️ Modo Compatibilidade: o processo re-renderiza frame a frame e pode levar mais tempo.</span>
               </div>
             )}
+
+            {/* Toggles de opções */}
+            <div className="flex items-center gap-4 mb-4 flex-wrap">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={cloudSaveEnabled}
+                    onChange={(e) => setCloudSaveEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:bg-[var(--primary)] transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </div>
+                <span className="text-xs font-medium text-gray-300 group-hover:text-white transition-colors">Salvar na Nuvem</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={autoDownloadEnabled}
+                    onChange={(e) => setAutoDownloadEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:bg-[var(--primary)] transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </div>
+                <span className="text-xs font-medium text-gray-300 group-hover:text-white transition-colors">Auto-Download</span>
+              </label>
+            </div>
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-lg font-bold flex-wrap">
