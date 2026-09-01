@@ -284,11 +284,24 @@ export async function concatenateVideosFFmpeg(
         }
         await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, transition, transitionDuration, durations);
       } else {
-        // SEM TRANSICAO. Sempre re-encode para H.264+AAC para garantir
-        // compatibilidade universal (Windows, QuickTime, Instagram, TikTok).
-        // O -c copy preserva o codec de entrada (HEVC/VP9/AV1) que nao toca
-        // em players padrao. Re-encode com libx264 + AAC resolve isso.
-        await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
+        // SEM TRANSICAO. Tenta -c copy (concat demuxer) primeiro — é ~10x mais
+        // rápido porque apenas copia os streams sem re-encode. Se as resoluções
+        // dos inputs diferem, o copy congela o vídeo no 2o clipe, então saltamos
+        // direto pro re-encode normalizado. Se o copy falhar por outro motivo,
+        // fazemos fallback seguro para re-encode.
+        const sameRes = await inputsSameResolution(inputs);
+        if (sameRes) {
+          const copyOk = await concatCopyDemuxer(ffmpeg, fileNames, outputFile, durations);
+          if (copyOk) {
+            console.log("[FFmpeg] concat demuxer -c copy OK (rápido)");
+          } else {
+            console.log("[FFmpeg] -c copy falhou, fallback para re-encode...");
+            await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
+          }
+        } else {
+          console.log("[FFmpeg] Resoluções diferentes, re-encode forçado...");
+          await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
+        }
       }
 
       if (onProgress) onProgress(85);
