@@ -289,22 +289,12 @@ export async function concatenateVideosFFmpeg(
         }
         await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, transition, transitionDuration, durations);
       } else {
-        // SEM TRANSICAO. Tenta -c copy (concat demuxer) primeiro — é ~10x mais
-        // rápido porque apenas copia os streams sem re-encode. Se as resoluções
-        // dos inputs diferem, o copy congela o vídeo no 2o clipe, então saltamos
-        // direto pro re-encode normalizado. Se o copy falhar por outro motivo,
-        // fazemos fallback seguro para re-encode.
-        const sameRes = await inputsSameResolution(inputs);
-        if (sameRes) {
-          const copyOk = await concatCopyDemuxer(ffmpeg, fileNames, outputFile, durations);
-          if (copyOk) {
-            console.log("[FFmpeg] concat demuxer -c copy OK (rápido)");
-          } else {
-            console.log("[FFmpeg] -c copy falhou, fallback para re-encode...");
-            await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
-          }
-        } else {
-          console.log("[FFmpeg] Resoluções diferentes, re-encode forçado...");
+        // SEM TRANSICAO: -c copy puro (concat demuxer). Cópia instantânea
+        // de streams sem re-encode. Se falhar (codecs incompatíveis), faz
+        // fallback uma única vez para re-encode seguro.
+        const copyOk = await concatCopyDemuxer(ffmpeg, fileNames, outputFile, durations);
+        if (!copyOk) {
+          console.log("[FFmpeg] -c copy falhou, fallback para re-encode...");
           await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
         }
       }
@@ -594,44 +584,6 @@ export const getBlobRealDuration = (videoBlob: Blob): Promise<number> => {
   });
 };
 
-// Le a resolucao real (videoWidth x videoHeight) de um input de video via
-// elemento oculto. Retorna null se nao conseguir (imagens, arquivos corrompidos).
-async function getVideoResolution(input: File | Blob): Promise<{ w: number; h: number } | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(input);
-    const video = document.createElement("video");
-    video.muted = true;
-    video.preload = "metadata";
-    video.onloadedmetadata = () => {
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      URL.revokeObjectURL(url);
-      resolve(w > 0 && h > 0 ? { w, h } : null);
-    };
-    video.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
-    video.src = url;
-  });
-}
-
-// Verifica se TODOS os inputs de video tem EXATAMENTE a mesma resolucao.
-// O -c copy (concat demuxer) CONGELA a imagem do 2o clipe quando as resolucoes
-// diferem (o audio continua, mas o video trava no ultimo frame do clipe anterior).
-// Se qualquer input divergir (ou nao for possivel ler), retorna false para
-// forcar o re-encode normalizado (fps=30, format=yuv420p, scale) e evitar o freeze.
-async function inputsSameResolution(inputs: (File | Blob)[]): Promise<boolean> {
-  try {
-    const dims = await Promise.all(inputs.map(getVideoResolution));
-    const valid = dims.filter((d): d is { w: number; h: number } => !!d);
-    if (valid.length < 2) return true; // nada a comparar ou <2 videos legiveis
-    const { w, h } = valid[0];
-    return valid.every((d) => d.w === w && d.h === h);
-  } catch {
-    return false; // ante qualquer erro, preferimos o re-encode (seguro)
-  }
-}
 
 /**
  * Format seconds to MM:SS (ou Hh Mmin Ss quando passa de 1h).
