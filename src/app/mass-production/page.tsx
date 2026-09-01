@@ -746,11 +746,17 @@ export default function MassProductionPage() {
           blob: result.blob, duration: result.duration, createdAt: new Date(),
         });
 
-        // URL permanente (MinIO/S3) — fallback secundario caso o Supabase Storage falhe.
-        const permanentUrl = await uploadGeneratedVideo(
-          result.blob,
-          `Video_${String(videoId).padStart(2, "0")}.mp4`
-        );
+        // URL permanente (MinIO/S3) — com fallback para blob URL local
+        let storedUrl = result.url;
+        try {
+          const permanentUrl = await uploadGeneratedVideo(
+            result.blob,
+            `Video_${String(videoId).padStart(2, "0")}.mp4`
+          );
+          if (permanentUrl) storedUrl = permanentUrl;
+        } catch (uploadErr) {
+          console.warn("[MassProduction] Upload S3 falhou, usando blob URL local:", uploadErr);
+        }
 
         // [DESABILITADO TEMPORARIAMENTE] Upload para o Supabase Storage
         // let cloudUrl: string | null = null;
