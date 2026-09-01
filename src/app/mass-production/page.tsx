@@ -752,35 +752,26 @@ export default function MassProductionPage() {
           `Video_${String(videoId).padStart(2, "0")}.mp4`
         );
 
-        // Upload para o Supabase Storage (nuvem primaria). Em caso de falha,
-        // mantemos o fallback S3/local e avisamos para re-tentativa manual.
-        let cloudUrl: string | null = null;
-        try {
-          cloudUrl = await uploadVideoToSupabase(
-            result.blob,
-            `Video_${String(videoId).padStart(2, "0")}.mp4`
-          );
-        } catch (uploadErr) {
-          const errMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
-          console.error("[MassProduction] Falha no upload Supabase Storage (usando fallback S3/local):", uploadErr);
-          // Alerta visível para depuração: o vídeo ficou apenas em S3/local.
-          alert(
-            `⚠️ Falha no upload para o Supabase Storage (nuvem).\n` +
-            `O vídeo "${`Video_${String(videoId).padStart(2, "0")}.mp4`}" foi salvo apenas localmente/S3.\n\n` +
-            `Erro: ${errMsg}`
-          );
-        }
+        // [DESABILITADO TEMPORARIAMENTE] Upload para o Supabase Storage
+        // let cloudUrl: string | null = null;
+        // try {
+        //   cloudUrl = await uploadVideoToSupabase(
+        //     result.blob,
+        //     `Video_${String(videoId).padStart(2, "0")}.mp4`
+        //   );
+        // } catch (uploadErr) {
+        //   const errMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+        //   console.error("[MassProduction] Falha no upload Supabase Storage:", uploadErr);
+        // }
 
-        const storedUrl = cloudUrl || permanentUrl || result.url;
+        // [DESABILITADO TEMPORARIAMENTE] Salvar registro no Supabase
+        // const supabaseId = await saveRenderedVideo(
+        //   { id: videoId, variation, blobUrl: storedUrl, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
+        //   storedUrl
+        // );
+        const supabaseId = null;
 
-        // Save to Supabase (guarda a URL permanente, não a blob temporária)
-        const supabaseId = await saveRenderedVideo(
-          { id: videoId, variation, blobUrl: storedUrl, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false },
-          storedUrl
-        );
-
-        // Persistência real no IndexedDB (blobs + miniatura) — a Galeria recria
-        // as blob URLs a partir daqui após reload/HMR, sem ERR_FILE_NOT_FOUND.
+        // Persistência local no IndexedDB (blobs + miniatura)
         if (supabaseId) {
           void persistGalleryItem(
             { id: videoId, supabaseId, variation, blobUrl: result.url, blob: result.blob, duration: result.duration, durationFormatted: "", status: "ready", progress: 100, selected: false, is_posted: false, savedToDB: true },
@@ -790,8 +781,7 @@ export default function MassProductionPage() {
 
         setRenderedVideos((prev) => prev.map((v) =>
           v.id === videoId ? { ...v, blobUrl: result.url, blob: result.blob, duration: result.duration,
-            durationFormatted: formatDurationLong(result.duration), status: "ready", progress: 100, savedToDB: true,
-            supabaseId: supabaseId || undefined, videoUrl: cloudUrl ?? undefined, isCloud: !!cloudUrl } : v
+            durationFormatted: formatDurationLong(result.duration), status: "ready", progress: 100, savedToDB: true } : v
         ));
 
         // Auto-download video immediately upon completion
