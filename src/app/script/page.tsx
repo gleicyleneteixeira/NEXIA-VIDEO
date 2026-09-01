@@ -92,6 +92,48 @@ const durations = [
   { value: "90s_plus", label: "90s+ (Aprofundado / Sem Limite)", desc: "Sem limite", emoji: "📖" },
 ];
 
+/**
+ * Embaralha as variações para que vídeos adjacentes na grade tenham ganchos/ângulos
+ * diferentes. Agrupa por "família" de gancho (primeiros 40 chars) e alterna
+ * round-robin para maximizar a diferença entre postagens consecutivas.
+ */
+function shuffleVariationsForPosting(variations: Variation[]): Variation[] {
+  if (variations.length <= 1) return variations;
+
+  // Agrupa por famílias de gancho (primeiros 40 chars como fingerprint)
+  const families = new Map<string, Variation[]>();
+  for (const v of variations) {
+    const key = (v.hook || "").slice(0, 40).toLowerCase().trim();
+    if (!families.has(key)) families.set(key, []);
+    families.get(key)!.push(v);
+  }
+
+  // Se todas têm gancho igual ou só 1 família, shuffle aleatório simples
+  if (families.size <= 1) {
+    const arr = [...variations];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // Round-robin entre famílias para intercalar ganchos diferentes
+  const result: Variation[] = [];
+  const queues = Array.from(families.values());
+  let round = 0;
+  while (queues.some((q) => q.length > 0)) {
+    for (const queue of queues) {
+      if (queue.length > round) {
+        result.push(queue[round]);
+      }
+    }
+    round++;
+  }
+
+  return result;
+}
+
 // Simple Toast component
 function Toast({ message, type, onClose }: { message: string; type: "success" | "error" | "info"; onClose: () => void }) {
   useEffect(() => {
@@ -406,7 +448,7 @@ export default function ScriptPage() {
         throw new Error("A IA nao retornou roteiros validos.");
       }
 
-      const nextVariations = aiVariations as Variation[];
+      const nextVariations = shuffleVariationsForPosting(aiVariations as Variation[]);
       setVariations(nextVariations);
       setViewMode("video");
       setToast({
