@@ -241,7 +241,12 @@ export async function concatenateVideosFFmpeg(
   transitionDuration: number = 0.5,
   durations?: number[]
 ): Promise<ConcatenateResult> {
-  let ffmpeg = await initFFmpeg(onProgress);
+  // Clamp progress 0-100: o FFmpeg.on("progress") pode reportar valores que
+  // somados ao progresso manual estouram 100%. Sempre limitar no源头.
+  const clamp = (p: number) => Math.min(100, Math.max(0, Math.round(p)));
+  const safeOnProgress = onProgress ? (p: number) => onProgress(clamp(p)) : undefined;
+
+  let ffmpeg = await initFFmpeg(safeOnProgress);
   const n = inputs.length;
   if (n === 0) throw new Error("Nenhum arquivo de entrada para concatenacao.");
   const fileNames = inputs.map((inp, i) => `input_${i}.${getFileExtension(inp)}`);
@@ -256,7 +261,7 @@ export async function concatenateVideosFFmpeg(
       for (const f of fileNames) await safeUnlink(ffmpeg, f);
       await safeUnlink(ffmpeg, outputFile);
 
-      if (onProgress) onProgress(10);
+      if (safeOnProgress) safeOnProgress(10);
 
       // Validar e escrever cada arquivo de entrada no FS do FFmpeg
       for (let i = 0; i < n; i++) {
@@ -268,10 +273,10 @@ export async function concatenateVideosFFmpeg(
         const data = await readFileToArray(input);
         if (data.byteLength === 0) throw new Error(`Input ${i + 1} data is empty (0 bytes)`);
         await ffmpeg.writeFile(fileNames[i], data);
-        if (onProgress) onProgress(10 + Math.round((i + 1) / n * 30));
+        if (safeOnProgress) safeOnProgress(10 + Math.round((i + 1) / n * 30));
       }
 
-      if (onProgress) onProgress(55);
+      if (safeOnProgress) safeOnProgress(55);
       console.log(`[FFmpeg] Concatenating ${n} videos (mode: ${mode}, format: ${format.width}x${format.height})...`);
 
       if (transition !== "none" && n >= 2) {
@@ -304,7 +309,7 @@ export async function concatenateVideosFFmpeg(
         }
       }
 
-      if (onProgress) onProgress(85);
+      if (safeOnProgress) safeOnProgress(85);
       console.log("[FFmpeg] Reading output...");
 
       const outputData = await ffmpeg.readFile(outputFile);
@@ -320,7 +325,7 @@ export async function concatenateVideosFFmpeg(
       // Le a duracao REAL do Blob (trata 9h fantasma como 0) para os cards.
       const duration = await getBlobRealDuration(blob);
 
-      if (onProgress) onProgress(100);
+        if (safeOnProgress) safeOnProgress(100);
       console.log("[FFmpeg] Done! Duration:", duration);
 
       return { blob, url, duration, filename: outputFile };
@@ -336,7 +341,7 @@ export async function concatenateVideosFFmpeg(
     } catch (firstErr) {
       if (/FS error|errno|FS\/|failed to (read|write)|cannot (read|write)/i.test(String((firstErr as Error)?.message || firstErr))) {
         console.warn("[FFmpeg] FS error detectado — resetando instancia e re-tentando uma vez...", firstErr);
-        ffmpeg = await resetFFmpegInstance(onProgress);
+        ffmpeg = await resetFFmpegInstance(safeOnProgress);
         result = await runConcat();
       } else {
         throw firstErr;
