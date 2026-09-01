@@ -24,6 +24,7 @@ import {
   EyeOff,
   Rocket,
   CheckCircle,
+  ArrowLeft,
 } from "lucide-react";
 import {
   VideoBlock,
@@ -49,7 +50,7 @@ import {
 } from "@/services/mediaStorageService";
 import { captureVideoThumbnail } from "@/utils/videoThumbnail";
 import { buildZip, downloadBlob } from "@/utils/zip";
-import { fisherYatesShuffle, interleaveByFirstBlock } from "@/utils/shuffle";
+import { fisherYatesShuffle, smartDistributeByDistance } from "@/utils/shuffle";
 import { deduplicateById } from "@/utils/videoDedup";
 import {
   sendFinalVideoToEditor,
@@ -852,29 +853,44 @@ export default function MassProductionPage() {
     const slotLists = slotIds.map((id) => getSlotVideos(id).filter((v) => v.file));
 
     // Produto cartesiano ESTRITO apenas dos slots da modalidade ativa.
-    let combos: UploadedVideo[][] = [[]];
+    // Cada combo armazena os índices originais para o algoritmo de distância.
+    let combos: { videos: UploadedVideo[]; indices: number[] }[] = [{ videos: [], indices: [] }];
     for (const list of slotLists) {
       if (list.length === 0) continue;
-      const next: UploadedVideo[][] = [];
+      const next: { videos: UploadedVideo[]; indices: number[] }[] = [];
       for (const combo of combos) {
-        for (const v of list) next.push([...combo, v]);
+        for (let vi = 0; vi < list.length; vi++) {
+          next.push({
+            videos: [...combo.videos, list[vi]],
+            indices: [...combo.indices, vi],
+          });
+        }
       }
       combos = next;
     }
 
     const variations: Variation[] = combos.map((combo, idx) => {
-      const blocks: VideoBlock[] = combo.map((v) => ({
+      const blocks: VideoBlock[] = combo.videos.map((v) => ({
         id: v.id,
         url: "",
         duration: v.duration,
         file: v.file as File,
       }));
       const expectedDuration = blocks.reduce((acc, b) => acc + (b.duration || 0), 0);
-      return { id: `var_${idx + 1}`, blocks, expectedDuration };
+      return { id: `var_${idx + 1}`, blocks, expectedDuration, _indices: combo.indices };
     });
 
-    const shuffled = interleaveByFirstBlock(variations, (v) => v.blocks[0]?.id || "");
-    await processQueue(shuffled);
+    // Distribuição inteligente: maximiza distância entre vídeos consecutivos
+    const shuffled = smartDistributeByDistance(
+      variations,
+      (v) => (v as unknown as { _indices: number[] })._indices || []
+    );
+    // Limpa _indices antes de enviar para a fila
+    const cleaned = shuffled.map((v, i) => {
+      const { _indices, ...rest } = v as unknown as Variation & { _indices: number[] };
+      return { ...rest, id: `var_${i + 1}` };
+    });
+    await processQueue(cleaned);
     } finally {
       isGeneratingRef.current = false;
     }
@@ -1213,6 +1229,15 @@ export default function MassProductionPage() {
       {/* ========== RESULTS VIEW ========== */}
       {activeView === "results" && renderedVideos.length > 0 && (
         <div>
+          <button
+            type="button"
+            onClick={() => setActiveView("upload")}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-all cursor-pointer mb-4"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Voltar para Upload
+          </button>
+
           {queueStatus.isProcessing && (
             <div className="bg-[#1c1c28] border border-[var(--primary)]/30 rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between mb-3">

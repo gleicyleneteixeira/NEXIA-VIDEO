@@ -51,3 +51,56 @@ export function interleaveByFirstBlock<T>(
 
   return result;
 }
+
+/**
+ * Distribuição inteligente por distância mínima (anti-repetição sequencial).
+ * Seleciona o próximo vídeo da fila como o que MAIS difere do anterior,
+ * maximizando a distância visual entre vídeos consecutivos na galeria.
+ *
+ * Pesos: Hook=3, Pain=3, Solution=3, CTA=2 (gancho tem mais impacto visual).
+ */
+export function smartDistributeByDistance<T>(
+  items: readonly T[],
+  getBlockIndices: (item: T) => number[]
+): T[] {
+  if (items.length <= 2) return [...items];
+
+  const remaining = items.map((item, i) => ({ item, originalIndex: i }));
+  const result: T[] = [];
+
+  // Começa pelo primeiro item
+  result.push(remaining.shift()!.item);
+
+  while (remaining.length > 0) {
+    const lastItem = remaining.length > 0 ? result[result.length - 1] : null;
+    const lastIndices = lastItem ? getBlockIndices(lastItem) : [];
+
+    let bestIdx = 0;
+    let bestScore = -1;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const candidateIndices = getBlockIndices(remaining[i].item);
+
+      // Calcula pontuação de diferença (mais blocos diferentes = maior pontuação)
+      let diffScore = 0;
+      const weights = [3, 3, 3, 2]; // Hook, Pain, Solution, CTA
+      for (let s = 0; s < Math.min(candidateIndices.length, weights.length); s++) {
+        if (lastIndices.length === 0 || candidateIndices[s] !== lastIndices[s]) {
+          diffScore += weights[s] || 1;
+        }
+      }
+
+      // Tie-breaker aleatório para evitar padrões determinísticos
+      const score = diffScore + Math.random() * 0.5;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+
+    result.push(remaining.splice(bestIdx, 1)[0].item);
+  }
+
+  return result;
+}
