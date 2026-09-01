@@ -49,7 +49,7 @@ import {
 } from "@/services/mediaStorageService";
 import { captureVideoThumbnail } from "@/utils/videoThumbnail";
 import { buildZip, downloadBlob } from "@/utils/zip";
-import { fisherYatesShuffle } from "@/utils/shuffle";
+import { fisherYatesShuffle, interleaveByFirstBlock } from "@/utils/shuffle";
 import { deduplicateById } from "@/utils/videoDedup";
 import {
   sendFinalVideoToEditor,
@@ -857,7 +857,7 @@ export default function MassProductionPage() {
       return { id: `var_${idx + 1}`, blocks, expectedDuration };
     });
 
-    const shuffled = fisherYatesShuffle(variations);
+    const shuffled = interleaveByFirstBlock(variations, (v) => v.blocks[0]?.id || "");
     await processQueue(shuffled);
     } finally {
       isGeneratingRef.current = false;
