@@ -398,10 +398,11 @@ export default function MassProductionPage() {
 
   // Trava rigida de execucao unica (sincrona). O estado `queueStatus.isProcessing`
   // so atualiza apos o re-render, entao cliques rapidos em sequencia AINDA podem
-  // disparar varias `processQueue` em paralelo (cards Vídeo # duplicados). O ref
+  // disparar varias `processQueue` em paralelo (cards Video # duplicados). O ref
   // e setado de imediato, bloqueando disparos paralelos de forma deterministica.
   const isGeneratingRef = useRef(false);
   const cancelledRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -656,6 +657,9 @@ export default function MassProductionPage() {
 
   const processQueue = async (variations: Variation[]) => {
     cancelledRef.current = false;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
     setQueueStatus({ isProcessing: true, current: 0, total: variations.length, percentage: 0, eta: "Calculando..." });
 
     // IDs únicos entre lotes: a lista NUNCA é substituída por uma nova geração,
@@ -679,7 +683,7 @@ export default function MassProductionPage() {
     const startTime = Date.now();
 
     for (let i = 0; i < variations.length; i++) {
-      if (cancelledRef.current) {
+      if (signal.aborted || cancelledRef.current) {
         console.log("[MassProduction] Fila cancelada pelo usuario.");
         break;
       }
@@ -738,7 +742,7 @@ export default function MassProductionPage() {
         // Upload para Supabase Storage (condicional — ligado pelo toggle)
         let cloudUrl: string | null = null;
         let supabaseId: string | null = null;
-        if (cloudSaveEnabled) {
+        if (cloudSaveEnabled && !signal.aborted) {
           try {
             cloudUrl = await uploadVideoToSupabase(
               result.blob,
@@ -766,8 +770,8 @@ export default function MassProductionPage() {
             supabaseId: supabaseId || undefined, videoUrl: cloudUrl ?? undefined, isCloud: !!cloudUrl } : v
         ));
 
-        // Auto-download (condicional)
-        if (autoDownloadEnabled) {
+        // Auto-download (condicional + checagem de cancelamento)
+        if (autoDownloadEnabled && !signal.aborted) {
           try {
             const link = document.createElement("a");
             link.href = result.url;
@@ -786,15 +790,17 @@ export default function MassProductionPage() {
     }
 
     // Remove videos pendentes (nao processados) da lista ao cancelar
-    if (cancelledRef.current) {
+    if (signal.aborted || cancelledRef.current) {
       setRenderedVideos((prev) => prev.filter((v) => v.status !== "pending"));
     }
 
-    setQueueStatus({ isProcessing: false, current: variations.length, total: variations.length, percentage: cancelledRef.current ? queueStatus.percentage : 100, eta: cancelledRef.current ? "Cancelado!" : "Concluido!" });
+    setQueueStatus({ isProcessing: false, current: variations.length, total: variations.length, percentage: (signal.aborted || cancelledRef.current) ? queueStatus.percentage : 100, eta: (signal.aborted || cancelledRef.current) ? "Cancelado!" : "Concluido!" });
+    abortControllerRef.current = null;
   };
 
   const handleCancelQueue = () => {
     cancelledRef.current = true;
+    abortControllerRef.current?.abort();
   };
 
   const activeSlotIds = BULK_MODALITIES_CONFIG[structureMode].map((s) => s.id);
