@@ -284,23 +284,11 @@ export async function concatenateVideosFFmpeg(
         }
         await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, transition, transitionDuration, durations);
       } else {
-        // SEM TRANSICAO. Decide entre copia rapida (-c copy) e re-encode normalizado.
-        // O -c copy CONGELA a imagem do 2o clipe quando as resolucoes diferem
-        // (audio toca, video trava no ultimo frame do clipe anterior). Por isso so
-        // usamos copy quando TODOS os inputs tem EXATAMENTE a mesma resolucao; caso
-        // contrario, forçamos o re-encode normalizado (fps=30, format=yuv420p, scale)
-        // que reconstrói todos os quadros na mesma taxa, eliminando o congelamento.
-        const sameResolution = n < 2 || (await inputsSameResolution(inputs));
-        if (sameResolution) {
-          const copied = await concatCopyDemuxer(ffmpeg, fileNames, outputFile, durations);
-          if (!copied) {
-            console.warn("[FFmpeg] -c copy indisponivel — usando re-encode normalizado (fallback).");
-            await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
-          }
-        } else {
-          console.log("[FFmpeg] Resolucoes diferentes — forçando re-encode normalizado (evita imagem congelada no 2o clipe).");
-          await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
-        }
+        // SEM TRANSICAO. Sempre re-encode para H.264+AAC para garantir
+        // compatibilidade universal (Windows, QuickTime, Instagram, TikTok).
+        // O -c copy preserva o codec de entrada (HEVC/VP9/AV1) que nao toca
+        // em players padrao. Re-encode com libx264 + AAC resolve isso.
+        await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, "none", 0.5, []);
       }
 
       if (onProgress) onProgress(85);
