@@ -398,6 +398,7 @@ export default function MassProductionPage() {
   // disparar varias `processQueue` em paralelo (cards Vídeo # duplicados). O ref
   // e setado de imediato, bloqueando disparos paralelos de forma deterministica.
   const isGeneratingRef = useRef(false);
+  const cancelledRef = useRef(false);
 
   const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -664,6 +665,7 @@ export default function MassProductionPage() {
   };
 
   const processQueue = async (variations: Variation[]) => {
+    cancelledRef.current = false;
     setQueueStatus({ isProcessing: true, current: 0, total: variations.length, percentage: 0, eta: "Calculando..." });
 
     // IDs únicos entre lotes: a lista NUNCA é substituída por uma nova geração,
@@ -687,6 +689,11 @@ export default function MassProductionPage() {
     const startTime = Date.now();
 
     for (let i = 0; i < variations.length; i++) {
+      if (cancelledRef.current) {
+        console.log("[MassProduction] Fila cancelada pelo usuario.");
+        break;
+      }
+
       const variation = variations[i];
       const videoId = startId + i;
 
@@ -803,7 +810,16 @@ export default function MassProductionPage() {
       }
     }
 
-    setQueueStatus({ isProcessing: false, current: variations.length, total: variations.length, percentage: 100, eta: "Concluido!" });
+    // Remove videos pendentes (nao processados) da lista ao cancelar
+    if (cancelledRef.current) {
+      setRenderedVideos((prev) => prev.filter((v) => v.status !== "pending"));
+    }
+
+    setQueueStatus({ isProcessing: false, current: variations.length, total: variations.length, percentage: cancelledRef.current ? queueStatus.percentage : 100, eta: cancelledRef.current ? "Cancelado!" : "Concluido!" });
+  };
+
+  const handleCancelQueue = () => {
+    cancelledRef.current = true;
   };
 
   const activeSlotIds = BULK_MODALITIES_CONFIG[structureMode].map((s) => s.id);
@@ -1209,6 +1225,14 @@ export default function MassProductionPage() {
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>{queueStatus.percentage}% concluido</span>
                 <span>ETA: {queueStatus.eta}</span>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={handleCancelQueue}
+                  className="px-4 py-2 text-xs font-semibold text-red-300 bg-red-950/80 hover:bg-red-900 border border-red-800 rounded-lg transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <span>Cancelar Concatenacao</span>
+                </button>
               </div>
             </div>
           )}
