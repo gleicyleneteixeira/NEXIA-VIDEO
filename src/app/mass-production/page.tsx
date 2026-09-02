@@ -1286,27 +1286,28 @@ export default function MassProductionPage() {
               </div>
 
               {/* Campo: Quantas variacoes gerar */}
-              {minColumnsOk && totalCombinations > 0 && (
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Quantidade a gerar</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      min={1}
-                      max={totalCombinations}
-                      value={desiredVariations || ""}
-                      placeholder={`${totalCombinations}`}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!isNaN(val) && val > 0) setDesiredVariations(Math.min(val, totalCombinations));
-                        else setDesiredVariations(0);
-                      }}
-                      className="w-28 px-3 py-2 rounded-xl bg-[#151520] border border-zinc-800/80 text-white text-sm font-semibold focus:outline-none focus:border-pink-500/50 transition-all"
-                    />
-                    <span className="text-xs text-zinc-500">de {totalCombinations} disponiveis</span>
-                  </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Quantidade a gerar</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalCombinations || 999}
+                    value={desiredVariations || ""}
+                    placeholder={totalCombinations > 0 ? `${totalCombinations}` : "0"}
+                    disabled={!minColumnsOk}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val) && val > 0) setDesiredVariations(Math.min(val, totalCombinations));
+                      else setDesiredVariations(0);
+                    }}
+                    className="w-28 px-3 py-2 rounded-xl bg-[#151520] border border-zinc-800/80 text-white text-sm font-semibold focus:outline-none focus:border-pink-500/50 transition-all disabled:opacity-40"
+                  />
+                  <span className="text-xs text-zinc-500">
+                    {totalCombinations > 0 ? `de ${totalCombinations} disponiveis` : "adicione videos primeiro"}
+                  </span>
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
