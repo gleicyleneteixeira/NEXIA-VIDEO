@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0d14;
+  --background: #09090e;
   --foreground: #f0f0f5;
-  --primary: #8b5cf6;
-  --primary-hover: #7c3aed;
-  --primary-glow: rgba(139, 92, 246, 0.15);
-  --secondary: #13131f;
-  --surface: #0e0e18;
-  --surface-hover: #1a1a2a;
+  --primary: #ec4899;
+  --primary-hover: #db2777;
+  --primary-glow: rgba(236, 72, 153, 0.15);
+  --secondary: #111118;
+  --surface: #161622;
+  --surface-hover: #1c1c2a;
   --border: #222236;
   --border-subtle: #1a1a2c;
   --text-primary: #f0f0f5;
@@ -21,9 +21,9 @@
   --radius: 14px;
   --radius-sm: 10px;
   --radius-lg: 20px;
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.2);
-  --shadow-card-hover: 0 4px 12px rgba(139,92,246,0.15), 0 12px 40px rgba(0,0,0,0.3);
-  --shadow-glow: 0 0 30px rgba(139,92,246,0.12);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
+  --shadow-card-hover: 0 4px 12px rgba(236,72,153,0.15), 0 12px 40px rgba(0,0,0,0.4);
+  --shadow-glow: 0 0 30px rgba(236,72,153,0.12);
 }
 
 * {
@@ -65,19 +65,19 @@ body {
 
 /* Selection */
 ::selection {
-  background: rgba(139, 92, 246, 0.3);
+  background: rgba(236, 72, 153, 0.3);
   color: white;
 }
 
 /* ====================== GLASS ====================== */
 .glass {
-  background: rgba(14, 14, 24, 0.85);
+  background: rgba(17, 17, 24, 0.85);
   backdrop-filter: blur(24px) saturate(1.2);
-  border: 1px solid rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(236, 72, 153, 0.08);
 }
 
 .glass-card {
-  background: linear-gradient(145deg, rgba(18, 18, 32, 0.7), rgba(14, 14, 24, 0.5));
+  background: linear-gradient(145deg, rgba(17, 17, 24, 0.7), rgba(22, 22, 34, 0.5));
   backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -86,15 +86,15 @@ body {
 }
 
 .glass-card:hover {
-  background: linear-gradient(145deg, rgba(22, 22, 38, 0.8), rgba(18, 18, 32, 0.6));
-  border-color: rgba(139, 92, 246, 0.25);
+  background: linear-gradient(145deg, rgba(22, 22, 34, 0.8), rgba(17, 17, 24, 0.6));
+  border-color: rgba(236, 72, 153, 0.25);
   box-shadow: var(--shadow-card-hover);
   transform: translateY(-1px);
 }
 
 /* ====================== GRADIENTS ====================== */
 .gradient-text {
-  background: linear-gradient(135deg, #a78bfa, #ec4899, #06b6d4);
+  background: linear-gradient(135deg, #ec4899, #f43f5e, #a855f7);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -109,7 +109,7 @@ body {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, var(--primary), var(--accent-pink));
+  background: linear-gradient(135deg, var(--primary), #f43f5e);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -135,11 +135,18 @@ body {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.2); }
-  50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.4); }
+  0%, 100% { box-shadow: 0 0 20px rgba(236, 72, 153, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(236, 72, 153, 0.4); }
 }
 
 .pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+
+@keyframes pulse-rec {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+
+.pulse-rec { animation: pulse-rec 1.4s ease-in-out infinite; }
 
 @keyframes shimmer {
   0% { background-position: -200% 0; }
@@ -181,7 +188,7 @@ body {
 
 /* ====================== BUTTONS ====================== */
 .btn-primary {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  background: linear-gradient(135deg, #ec4899, #be185d);
   color: white;
   padding: 12px 24px;
   border-radius: var(--radius-sm);
@@ -202,9 +209,9 @@ body {
   transition: opacity 0.3s;
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  background: linear-gradient(135deg, #db2777, #9d174d);
   transform: translateY(-1px);
-  box-shadow: 0 8px 25px rgba(139, 92, 246, 0.35);
+  box-shadow: 0 8px 25px rgba(236, 72, 153, 0.35);
 }
 .btn-primary:hover::after { opacity: 1; }
 .btn-primary:active { transform: translateY(0); }
@@ -222,7 +229,7 @@ body {
 }
 .btn-secondary:hover {
   background: var(--surface-hover);
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: rgba(236, 72, 153, 0.3);
 }
 
 /* ====================== INPUTS ====================== */
@@ -260,8 +267,8 @@ textarea.input-field {
 
 /* ====================== TABS ====================== */
 .tab-active {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.1));
-  border-color: rgba(139, 92, 246, 0.4);
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.15), rgba(244, 63, 94, 0.1));
+  border-color: rgba(236, 72, 153, 0.4);
 }
 
 /* ====================== DIVIDERS ====================== */
@@ -282,9 +289,9 @@ textarea.input-field {
   letter-spacing: 0.02em;
 }
 .badge-primary {
-  background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.2);
 }
 .badge-green {
   background: rgba(16, 185, 129, 0.12);
@@ -315,7 +322,7 @@ textarea.input-field {
   border-radius: 2px;
 }
 .timeline-progress {
-  background: linear-gradient(90deg, #8b5cf6, #ec4899);
+  background: linear-gradient(90deg, #ec4899, #f43f5e);
   height: 100%;
   border-radius: 2px;
   transition: width 0.3s ease;
