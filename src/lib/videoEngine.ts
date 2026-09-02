@@ -429,7 +429,8 @@ async function concatCopyDemuxer(
 }
 
 /**
- * Re-encode com filter_complex — suporta 3 ou 4 blocos
+ * Re-encode com filter_complex — suporta transicoes fade/wipe
+ * Abordagem simplificada: xfade no video + concat simples no audio
  */
 async function ffmpegReEncode(
   ffmpeg: FFmpeg,
@@ -442,57 +443,45 @@ async function ffmpegReEncode(
 ) {
   const { width, height } = format;
   const n = fileNames.length;
-  console.log(`[FFmpeg] Re-encoding ${n} videos to ${width}x${height} (passthrough)...`);
+  console.log(`[FFmpeg] Re-encoding ${n} videos to ${width}x${height} (transition=${transition})...`);
 
-  // Construir filter_complex dinamicamente
-  const videoFilters: string[] = [];
-  const audioFilters: string[] = [];
-
+  // Normalizar cada input: video scale + audio aformat
+  const inputFilters: string[] = [];
   for (let i = 0; i < n; i++) {
-    videoFilters.push(
-      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v${i}]`
-    );
-    audioFilters.push(
-      `[${i}:a]aformat=sample_rates=48000:channel_layouts=stereo[a${i}]`
-    );
+    inputFilters.push(`[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,fps=30[v${i}]`);
+    inputFilters.push(`[${i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a${i}]`);
   }
 
   let filterComplex = "";
+
   if (transition !== "none" && n >= 2 && durations.length === n) {
-    let currentVideo = "v0";
-    let currentAudio = "a0";
+    const transitionName = transition === "wipe" ? "slideleft" : "fade";
+    const xfadeParts: string[] = [];
+    let prevLabel = "v0";
     let accumulatedTime = durations[0];
 
-    const transitionName = transition === "wipe" ? "slideleft" : "fade";
-
-    let vFilters = videoFilters.join("; ") + "; ";
-    let aFilters = audioFilters.join("; ") + "; ";
-    filterComplex = vFilters + aFilters;
-
     for (let i = 1; i < n; i++) {
-      const nextVideo = `v${i}`;
-      const nextAudio = `a${i}`;
-      const outVideo = `v_out_${i}`;
-      const outAudio = `a_out_${i}`;
-
-      // Garante offset minimo de 0.04s para evitar erro no xfade
-      const offset = Math.max(0.04, accumulatedTime - transitionDuration);
-
-      filterComplex += `[${currentVideo}][${nextVideo}]xfade=transition=${transitionName}:duration=${transitionDuration}:offset=${offset.toFixed(3)}[${outVideo}]; `;
-      filterComplex += `[${currentAudio}][${nextAudio}]acrossfade=d=${transitionDuration}:c1=tri:c2=tri[${outAudio}]; `;
-
-      currentVideo = outVideo;
-      currentAudio = outAudio;
-
-      accumulatedTime = offset + transitionDuration + Math.max(0, durations[i] - transitionDuration);
+      const outLabel = `vt${i}`;
+      const offset = Math.max(0.05, accumulatedTime - transitionDuration);
+      xfadeParts.push(`[${prevLabel}][v${i}]xfade=transition=${transitionName}:duration=${transitionDuration}:offset=${offset.toFixed(3)}[${outLabel}]`);
+      prevLabel = outLabel;
+      accumulatedTime = offset + durations[i];
     }
+    xfadeParts.push(`[${prevLabel}]copy[outv]`);
 
-    // Map final outputs
-    filterComplex += `[${currentVideo}]copy[outv]; [${currentAudio}]copy[outa]`;
+    // Audio: concat simples (sem crossfade para evitar erro no FFmpeg.wasm)
+    const audioInputs = Array.from({ length: n }, (_, i) => `[a${i}]`).join("");
+    xfadeParts.push(`${audioInputs}concat=n=${n}:v=0:a=1[outa]`);
+
+    filterComplex = [...inputFilters, ...xfadeParts].join("; ");
   } else {
-    const concatInputs = Array.from({ length: n }, (_, i) => `[v${i}][a${i}]`).join("");
-    filterComplex = [...videoFilters, ...audioFilters, `${concatInputs}concat=n=${n}:v=1:a=1[outv][outa]`].join(";");
+    // Sem transicao: concat direto
+    const videoInputs = Array.from({ length: n }, (_, i) => `[v${i}]`).join("");
+    const audioInputs = Array.from({ length: n }, (_, i) => `[a${i}]`).join("");
+    filterComplex = [...inputFilters, `${videoInputs}${audioInputs}concat=n=${n}:v=1:a=1[outv][outa]`].join("; ");
   }
+
+  console.log(`[FFmpeg] filter_complex:\n${filterComplex}`);
 
   const inputs: string[] = [];
   for (const f of fileNames) {
