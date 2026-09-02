@@ -256,11 +256,17 @@ export async function concatenateVideosFFmpeg(
     // Nucleo da concatenacao de UMA variacao. Isolado para permitir reset+retry
     // seguro caso o MEMFS do FFmpeg.wasm corrompa (FS error).
     const runConcat = async (): Promise<ConcatenateResult> => {
-      // LIMPEZA PREVENTIVA DO RESIDUAL: remove inputs e output de tentativas
-      // anteriores ANTES de escrever, para nao acumular no disco virtual.
+      // LIMPEZA COMPLETA DO FS: remove arquivos de renders anteriores
+      // Remove inputs padrao + outputs + intermediarios
       for (const f of fileNames) await safeUnlink(ffmpeg, f);
       await safeUnlink(ffmpeg, outputFile);
       await safeUnlink(ffmpeg, "concat.txt");
+      for (let i = 0; i < 20; i++) await safeUnlink(ffmpeg, `reenc_${i}.mp4`);
+      for (let i = 0; i < 20; i++) await safeUnlink(ffmpeg, `input_${i}.mp4`);
+      for (let i = 0; i < 20; i++) await safeUnlink(ffmpeg, `input_${i}.webm`);
+      for (let i = 0; i < 20; i++) await safeUnlink(ffmpeg, `input_${i}.mkv`);
+      await safeUnlink(ffmpeg, "output.mp4");
+      await safeUnlink(ffmpeg, "output_final.mp4");
 
       if (safeOnProgress) safeOnProgress(10);
 
@@ -430,7 +436,9 @@ async function concatCopyDemuxer(
 
 /**
  * Re-encode com filter_complex — suporta transicoes fade/wipe
- * Abordagem simplificada: xfade no video + concat simples no audio
+ * Estrategia em 2 etapas para robustez no FFmpeg.wasm:
+ * 1) Re-encode cada clip individualmente para formato padrao
+ * 2) Aplica xfade nos clips ja padronizados (sem filter_complex complexo)
  */
 async function ffmpegReEncode(
   ffmpeg: FFmpeg,
@@ -445,70 +453,147 @@ async function ffmpegReEncode(
   const n = fileNames.length;
   console.log(`[FFmpeg] Re-encoding ${n} videos to ${width}x${height} (transition=${transition})...`);
 
-  // Normalizar cada input: video scale + audio aformat
-  const inputFilters: string[] = [];
+  // Etapa 1: Re-encode cada clip individualmente para formato padrao
+  const reencodedNames: string[] = [];
   for (let i = 0; i < n; i++) {
-    inputFilters.push(`[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,fps=30[v${i}]`);
-    inputFilters.push(`[${i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a${i}]`);
+    const reencName = `reenc_${i}.mp4`;
+    reencodedNames.push(reencName);
+    await safeUnlink(ffmpeg, reencName);
+
+    const reencFilter = `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,fps=30[vout];[${i}:a]aformat=sample_rates=44100:channel_layouts=stereo[aout]`;
+
+    console.log(`[FFmpeg] Pre-encoding clip ${i + 1}/${n}...`);
+    await ffmpeg.exec([
+      "-fflags", "+genpts",
+      "-avoid_negative_ts", "make_zero",
+      "-i", fileNames[i],
+      "-filter_complex", reencFilter,
+      "-map", "[vout]",
+      "-map", "[aout]",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-tune", "zerolatency",
+      "-crf", "28",
+      "-pix_fmt", "yuv420p",
+      "-r", "30",
+      "-c:a", "aac",
+      "-ar", "44100",
+      "-b:a", "96k",
+      "-movflags", "+faststart",
+      "-y",
+      reencName
+    ]);
+    console.log(`[FFmpeg] Pre-encoded clip ${i + 1} OK`);
   }
 
-  let filterComplex = "";
-
-  if (transition !== "none" && n >= 2 && durations.length === n) {
+  // Etapa 2: Aplicar xfade nos clips padronizados
+  if (transition !== "none" && n >= 2) {
     const transitionName = transition === "wipe" ? "slideleft" : "fade";
+
+    // Sondar duracoes dos clips re-encodeados
+    const reencDurations: number[] = [];
+    for (let i = 0; i < n; i++) {
+      try {
+        const fileData = await ffmpeg.readFile(reencodedNames[i]);
+        const url = URL.createObjectURL(new Blob([fileData as BlobPart], { type: "video/mp4" }));
+        const d = await getOutputDuration(url);
+        URL.revokeObjectURL(url);
+        reencDurations.push(d);
+      } catch {
+        reencDurations.push(5);
+      }
+    }
+    console.log(`[FFmpeg] Duracoes dos clips padronizados:`, reencDurations);
+
+    // Construir filter_complex simplificado com clips ja padronizados
+    const inputFilters: string[] = [];
+    for (let i = 0; i < n; i++) {
+      inputFilters.push(`[${i}:v]copy[v${i}]`);
+      inputFilters.push(`[${i}:a]copy[a${i}]`);
+    }
+
     const xfadeParts: string[] = [];
     let prevLabel = "v0";
-    let accumulatedTime = durations[0];
+    let accumulatedTime = reencDurations[0];
 
     for (let i = 1; i < n; i++) {
       const outLabel = `vt${i}`;
       const offset = Math.max(0.05, accumulatedTime - transitionDuration);
       xfadeParts.push(`[${prevLabel}][v${i}]xfade=transition=${transitionName}:duration=${transitionDuration}:offset=${offset.toFixed(3)}[${outLabel}]`);
       prevLabel = outLabel;
-      accumulatedTime = offset + durations[i];
+      accumulatedTime = offset + reencDurations[i];
     }
     xfadeParts.push(`[${prevLabel}]copy[outv]`);
 
-    // Audio: concat simples (sem crossfade para evitar erro no FFmpeg.wasm)
     const audioInputs = Array.from({ length: n }, (_, i) => `[a${i}]`).join("");
     xfadeParts.push(`${audioInputs}concat=n=${n}:v=0:a=1[outa]`);
 
-    filterComplex = [...inputFilters, ...xfadeParts].join("; ");
+    const filterComplex = [...inputFilters, ...xfadeParts].join("; ");
+    console.log(`[FFmpeg] Final filter_complex:\n${filterComplex}`);
+
+    const reencInputs: string[] = [];
+    for (const f of reencodedNames) {
+      reencInputs.push("-i", f);
+    }
+
+    await ffmpeg.exec([
+      "-fflags", "+genpts",
+      "-avoid_negative_ts", "make_zero",
+      ...reencInputs,
+      "-filter_complex", filterComplex,
+      "-map", "[outv]",
+      "-map", "[outa]",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-tune", "zerolatency",
+      "-crf", "28",
+      "-pix_fmt", "yuv420p",
+      "-r", "30",
+      "-c:a", "aac",
+      "-ar", "44100",
+      "-b:a", "96k",
+      "-movflags", "+faststart",
+      "-y",
+      outputFile
+    ]);
   } else {
-    // Sem transicao: concat direto
+    // Sem transicao: concat direto nos clips padronizados
     const videoInputs = Array.from({ length: n }, (_, i) => `[v${i}]`).join("");
     const audioInputs = Array.from({ length: n }, (_, i) => `[a${i}]`).join("");
-    filterComplex = [...inputFilters, `${videoInputs}${audioInputs}concat=n=${n}:v=1:a=1[outv][outa]`].join("; ");
+    const reencInputs: string[] = [];
+    for (const f of reencodedNames) {
+      reencInputs.push("-i", f);
+    }
+
+    const simpleFilter = Array.from({length: n}, (_, i) => `[${i}:v]copy[v${i}];[${i}:a]copy[a${i}]`).join(";") + `;${videoInputs}${audioInputs}concat=n=${n}:v=1:a=1[outv][outa]`;
+
+    await ffmpeg.exec([
+      "-fflags", "+genpts",
+      "-avoid_negative_ts", "make_zero",
+      ...reencInputs,
+      "-filter_complex", simpleFilter,
+      "-map", "[outv]",
+      "-map", "[outa]",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-tune", "zerolatency",
+      "-crf", "28",
+      "-pix_fmt", "yuv420p",
+      "-r", "30",
+      "-c:a", "aac",
+      "-ar", "44100",
+      "-b:a", "96k",
+      "-movflags", "+faststart",
+      "-y",
+      outputFile
+    ]);
   }
 
-  console.log(`[FFmpeg] filter_complex:\n${filterComplex}`);
-
-  const inputs: string[] = [];
-  for (const f of fileNames) {
-    inputs.push("-i", f);
+  // Limpar clips intermediarios
+  for (const f of reencodedNames) {
+    await safeUnlink(ffmpeg, f);
   }
 
-  await ffmpeg.exec([
-    "-fflags", "+genpts",
-    "-avoid_negative_ts", "make_zero",
-    ...inputs,
-    "-filter_complex", filterComplex,
-    "-map", "[outv]",
-    "-map", "[outa]",
-    "-c:v", "libx264",
-    "-preset", "ultrafast",
-    "-tune", "zerolatency",
-    "-crf", "28",
-    "-pix_fmt", "yuv420p",
-    "-r", "30",
-    "-threads", "0",
-    "-c:a", "aac",
-    "-ar", "44100",
-    "-b:a", "96k",
-    "-movflags", "+faststart",
-    "-y",
-    outputFile
-  ]);
   console.log("[FFmpeg] Re-encode succeeded!");
 }
 

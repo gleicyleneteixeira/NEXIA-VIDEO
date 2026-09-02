@@ -392,6 +392,7 @@ export default function MassProductionPage() {
   const [cloudSaveEnabled, setCloudSaveEnabled] = useState(false);
   const [autoDownloadEnabled, setAutoDownloadEnabled] = useState(false);
   const [lotTitle, setLotTitle] = useState("");
+  const [desiredVariations, setDesiredVariations] = useState(0);
 
   const [queueStatus, setQueueStatus] = useState<QueueStatus>({
     isProcessing: false, current: 0, total: 0, percentage: 0, eta: "0:00",
@@ -822,6 +823,9 @@ export default function MassProductionPage() {
   const minColumnsOk = activeColumns.length >= 2;
   const totalLoaded = activeColumns.reduce((acc, c) => acc + c.count, 0);
 
+  // Ajusta desiredVariations quando totalCombinations muda
+  const effectiveDesired = Math.min(desiredVariations || totalCombinations, totalCombinations);
+
   const generateCombinations = async () => {
     // Trava anti-disparo-triplo: impede execucoes paralelas (cliques repetidos)
     // que gerariam cards Vídeo # duplicados na galeria.
@@ -878,7 +882,9 @@ export default function MassProductionPage() {
       const { _indices, ...rest } = v as unknown as Variation & { _indices: number[] };
       return { ...rest, id: `var_${i + 1}` };
     });
-    await processQueue(cleaned);
+    // Limita a quantidade desejada pelo usuario
+    const limited = cleaned.slice(0, effectiveDesired);
+    await processQueue(limited);
     } finally {
       isGeneratingRef.current = false;
     }
@@ -1278,6 +1284,29 @@ export default function MassProductionPage() {
                   {!activeColumns.length && <span className="text-sm text-zinc-500">Adicione videos para ver o calculo</span>}
                 </div>
               </div>
+
+              {/* Campo: Quantas variacoes gerar */}
+              {minColumnsOk && totalCombinations > 0 && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Quantidade a gerar</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalCombinations}
+                      value={desiredVariations || ""}
+                      placeholder={`${totalCombinations}`}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val) && val > 0) setDesiredVariations(Math.min(val, totalCombinations));
+                        else setDesiredVariations(0);
+                      }}
+                      className="w-28 px-3 py-2 rounded-xl bg-[#151520] border border-zinc-800/80 text-white text-sm font-semibold focus:outline-none focus:border-pink-500/50 transition-all"
+                    />
+                    <span className="text-xs text-zinc-500">de {totalCombinations} disponiveis</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1290,7 +1319,7 @@ export default function MassProductionPage() {
             {queueStatus.isProcessing ? (
               <><RefreshCw className="w-5 h-5 animate-spin" /> Renderizando fila...</>
             ) : (
-              <><Sparkles className="w-5 h-5" /> Gerar {totalCombinations} Variacoes</>
+              <><Sparkles className="w-5 h-5" /> Gerar {effectiveDesired} Variacoes</>
             )}
           </button>
         </>
