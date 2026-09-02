@@ -160,12 +160,12 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="relative isolate w-full max-w-[1600px] mx-auto px-2 lg:px-6 py-8 space-y-8 animate-fade-in">
+    <div className="relative isolate w-full max-w-7xl mx-auto px-2 lg:px-6 py-8 space-y-8 animate-fade-in">
       {/* Ambiência: orbes de iluminação rosado/púrpura desfocados */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-32 -left-24 w-[480px] h-[480px] rounded-full bg-pink-600/20 blur-[120px]" />
-        <div className="absolute top-1/3 -right-24 w-[520px] h-[520px] rounded-full bg-purple-600/20 blur-[120px]" />
-        <div className="absolute bottom-10 left-1/3 w-[420px] h-[420px] rounded-full bg-fuchsia-600/10 blur-[120px]" />
+        <div className="absolute -top-32 -left-24 w-[480px] h-[480px] rounded-full bg-pink-600/15 blur-[120px]" />
+        <div className="absolute top-1/3 -right-24 w-[520px] h-[520px] rounded-full bg-purple-600/15 blur-[120px]" />
+        <div className="absolute bottom-10 left-1/3 w-[420px] h-[420px] rounded-full bg-fuchsia-600/8 blur-[120px]" />
       </div>
 
       {/* Título de boas-vindas */}
@@ -193,19 +193,19 @@ export default function DashboardPage() {
       </div>
 
       {/* Grid de Métricas */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
             <div
               key={stat.label}
-              className="bg-zinc-900/40 backdrop-blur-xl border border-white/10 shadow-2xl shadow-purple-950/20 rounded-2xl p-5 hover:border-pink-500/30 transition-all flex items-center justify-between"
+              className="bg-[#101018] backdrop-blur-xl border border-zinc-800/80 shadow-xl rounded-2xl p-5 hover:border-zinc-700/80 transition-all flex items-center justify-between group"
             >
               <div>
                 <span className="text-xs font-semibold text-zinc-400 tracking-wide uppercase">
                   {stat.label}
                 </span>
-                <div className="text-3xl font-black text-white mt-1">{stat.value}</div>
+                <div className="text-3xl font-black text-white mt-1 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-pink-400 transition-all">{stat.value}</div>
               </div>
               <div className={`w-11 h-11 rounded-xl ${stat.bg} ${stat.color} flex items-center justify-center`}>
                 <Icon className="w-5 h-5" />
@@ -225,9 +225,9 @@ export default function DashboardPage() {
               <Link
                 key={action.title}
                 href={action.href}
-                className="relative bg-zinc-900/40 backdrop-blur-xl border border-white/10 shadow-2xl shadow-purple-950/20 rounded-2xl p-5 transition-all cursor-pointer group flex flex-col justify-between hover:border-pink-500/30"
+                className="relative bg-[#101018] backdrop-blur-xl border border-zinc-800/80 shadow-xl rounded-2xl p-5 transition-all cursor-pointer group flex flex-col justify-between hover:border-zinc-700/80"
               >
-                <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${action.tint} opacity-60 pointer-events-none`} />
+                <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${action.tint} opacity-40 pointer-events-none`} />
                 <div className="space-y-2 relative">
                   <div className={`w-9 h-9 rounded-xl ${action.iconCls} flex items-center justify-center`}>
                     <Icon className="w-4 h-4" />
@@ -250,7 +250,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Roteiros Recentes */}
-      <div className="bg-zinc-900/30 backdrop-blur-md border border-white/5 rounded-2xl shadow-xl overflow-hidden">
+      <div className="bg-[#101018] backdrop-blur-md border border-zinc-800/80 rounded-2xl shadow-xl overflow-hidden">
         <div className="flex items-center justify-between p-6 pb-4">
           <div>
             <h2 className="text-base font-bold text-white">Roteiros Recentes</h2>
@@ -285,7 +285,7 @@ export default function DashboardPage() {
           <div className="w-full overflow-x-auto px-2 pb-2">
             <table className="w-full text-left border-collapse text-xs lg:text-sm">
               <thead>
-                 <tr className="border-b border-white/5 text-zinc-400 uppercase tracking-wider text-[11px]">
+                 <tr className="border-b border-zinc-800/60 text-zinc-400 uppercase tracking-wider text-[11px]">
                   <th className="py-3 px-4">Roteiro</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Vídeos</th>
@@ -293,9 +293,9 @@ export default function DashboardPage() {
                   <th className="py-3 px-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/50">
+              <tbody className="divide-y divide-zinc-800/40">
                 {data.recentScripts.map((script) => (
-                  <tr key={script.id} className="hover:bg-white/5 transition-colors group">
+                  <tr key={script.id} className="hover:bg-white/[0.02] transition-colors group">
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-6 rounded-md bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">

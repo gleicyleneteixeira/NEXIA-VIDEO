@@ -17,7 +17,7 @@ export default function RootLayout({
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <body className="h-screen w-screen overflow-hidden bg-[#09090e]">
+      <body className="h-screen w-screen overflow-hidden bg-[#08080c]">
         {isPublicPage ? (
           // Layout para páginas públicas (login/register)
           <>{children}</>

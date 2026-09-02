@@ -1,4 +1,5 @@
 const API_KEY_STORAGE_KEY = "@nexia_openrouter_token_v1";
+const GROQ_KEY_STORAGE_KEY = "@nexia_groq_token_v1";
 
 const LEGACY_SINGLE_KEY = "openrouter_api_key";
 const LEGACY_LIST_KEY = "openrouter_api_keys";
@@ -86,6 +87,50 @@ export const AiKeyService = {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(API_KEY_STORAGE_KEY);
       notifyListeners();
+    }
+  },
+
+  /**
+   * Obtém o token do Groq salvo em @nexia_groq_token_v1.
+   */
+  getGroqToken(): string {
+    if (typeof window === "undefined") {
+      return process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
+    }
+    try {
+      const stored = window.localStorage.getItem(GROQ_KEY_STORAGE_KEY);
+      if (stored && stored.trim()) return stored.trim();
+    } catch (e) {
+      console.warn("Erro ao acessar localStorage para chave Groq:", e);
+    }
+    return process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
+  },
+
+  /**
+   * Salva o token do Groq em @nexia_groq_token_v1.
+   */
+  setGroqToken(token: string): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+      const cleanToken = token.trim();
+      if (!cleanToken) {
+        window.localStorage.removeItem(GROQ_KEY_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(GROQ_KEY_STORAGE_KEY, cleanToken);
+      }
+      return true;
+    } catch (e) {
+      console.error("Falha ao salvar chave Groq:", e);
+      return false;
+    }
+  },
+
+  /**
+   * Remove o token do Groq do localStorage.
+   */
+  removeGroqToken(): void {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(GROQ_KEY_STORAGE_KEY);
     }
   },
 };

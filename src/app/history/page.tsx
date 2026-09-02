@@ -11,6 +11,7 @@ import {
   Tag,
   CheckCircle2,
   History,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import ContentCard from "@/components/ContentCard";
@@ -42,6 +43,8 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState<SavedScriptProject | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "completed">("all");
+  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
+  const [cleanedCount, setCleanedCount] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +65,13 @@ export default function HistoryPage() {
     if (!window.confirm("Excluir este roteiro?")) return;
     await ScriptHistoryService.deleteProject(id);
     if (viewing?.id === id) setViewing(null);
+    await load();
+  };
+
+  const handleCleanupTestEntries = async () => {
+    const count = await ScriptHistoryService.cleanupTestEntries();
+    setCleanedCount(count);
+    setShowCleanupConfirm(false);
     await load();
   };
 
@@ -148,7 +158,46 @@ export default function HistoryPage() {
         <p className="text-[var(--text-secondary)] text-[15px] mt-1">
           Historico de todas as geracoes de conteudo (salvo localmente no navegador)
         </p>
+        <div className="flex items-center gap-3 mt-3">
+          <button
+            onClick={() => setShowCleanupConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-[var(--accent-orange)]/10 border border-[var(--accent-orange)]/20 text-[var(--accent-orange)] text-xs font-medium hover:bg-[var(--accent-orange)]/20 transition-colors"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Limpar Entradas de Teste
+          </button>
+        </div>
       </div>
+
+      {showCleanupConfirm && (
+        <div className="mb-6 p-4 bg-[var(--accent-orange)]/10 border border-[var(--accent-orange)]/20 rounded-xl animate-slide-up">
+          <p className="text-sm text-[var(--accent-orange)] font-medium mb-3">
+            Isso removerá todos os roteiros com os temas "Detran", "prova teórica" ou "psicotécnico".
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void handleCleanupTestEntries()}
+              className="px-3 py-1.5 bg-[var(--accent-orange)] text-white rounded-[8px] text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              Confirmar Limpeza
+            </button>
+            <button
+              onClick={() => setShowCleanupConfirm(false)}
+              className="px-3 py-1.5 bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] rounded-[8px] text-xs font-medium hover:text-white transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {cleanedCount > 0 && (
+        <div className="mb-6 p-3 bg-[var(--accent-green)]/10 border border-[var(--accent-green)]/20 rounded-xl animate-slide-up">
+          <p className="text-sm text-[var(--accent-green)]">
+            ✅ {cleanedCount} entrada(s) de teste removida(s).
+          </p>
+        </div>
+      )}
 
       {/* Status Filter Tabs */}
       <div className="flex border-b border-[var(--border-subtle)] mb-6 gap-2">

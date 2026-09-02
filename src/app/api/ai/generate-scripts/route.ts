@@ -46,14 +46,16 @@ DIRETRIZES DE CRIACAO:
       "painOrDesire": "Texto da Dor/Desejo/Duvida (Slot 2)",
       "solution": "Texto da Solucao (Slot 3)",
       "cta": "Texto da CTA (Slot 4)",
-      "seoCaption": "Legenda completa e otimizada para SEO (com emojis, explicacao e CTA) pronta para copiar e colar",
+      "seoCaption": "TODO o texto falado do roteiro completo (Gancho + Dor/Desejo + Solucao + CTA), com emojis naturais espalhados para dar vida. NAO crie uma legenda resumida ou separada. A descricao do post e EXATAMENTE o que o criador vai falar no video, ponto final.",
       "sceneDirection": "Direcao para o criador gravar",
       "bRollSuggestions": ["broll 1", "broll 2", "broll 3"],
       "hashtags": ["tag1", "tag2", "tag3"]
     }
     Cada roteiro DEVE ser completo e falavel em voz alta. O campo "seoCaption" e OBRIGATORIO:
-    deve ser a legenda final pronta para Instagram/TikTok/YouTube, reunindo os 4 blocos de forma
-    coesa, com emojis, explicacao e o CTA, SEM as hashtags (estas vao no campo "hashtags" separado).
+    deve ser a COPIA EXATA de TODO o texto falado do roteiro (hook + painOrDesire + solution + cta),
+    incluindo os mesmos ganchos, frases e fechamento. A unica diferenca e que o seoCaption pode
+    ter emojis naturais intercalados no texto para dar vida ao post. NUNCA resuma, parafraseie ou
+    crie uma descricao "sobre" o video — a descricao E o proprio roteiro falado.
 
 IDIOMA E HASHTAGS:
 - TODO o conteudo retornado DEVE ser em PORTUGUES BRASILEIRO. NUNCA gere texto em outro idioma.
@@ -134,12 +136,27 @@ const RECOMMENDED_FREE_MODELS = [
   "mistralai/mistral-small-3.1-24b-instruct:free",
 ];
 
+const GROQ_FREE_MODELS = [
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+  "gemma2-9b-it",
+  "mixtral-8x7b-32768",
+];
+
 const PAID_FALLBACK_MODELS = [
   "google/gemini-2.5-flash",
   "meta-llama/llama-3.3-70b-instruct",
   "mistralai/mistral-small-3.1-24b-instruct",
   "qwen/qwen-2.5-72b-instruct",
   "openai/gpt-4o-mini",
+];
+
+const OLLAMA_MODELS = [
+  "llama3.2",
+  "llama3.1",
+  "mistral",
+  "gemma2",
+  "phi3",
 ];
 
 const DEFAULT_MODEL = "google/gemini-2.5-flash:free";
@@ -178,6 +195,16 @@ META TOTAL: aula/masterclass de 210 a 250 palavras.
 - SLOT 1 (Gancho): introducao envolvente e contextualizada (25-30 palavras).
 - SLOT 2 (Dor/Desejo/Duvida) + SLOT 3 (Solucao): analise detalhada, exemplos de aplicacao, estudo de caso ou explicacao minuciosa de gatilhos (160-180 palavras).
 - SLOT 4 (CTA): convite estruturado com oferta/escassez (25-30 palavras).`
+      );
+    case "90s_plus":
+      return (
+        header +
+        `
+META TOTAL: conteudo estendido e sem limite (220+ palavras).
+- SLOT 1 (Gancho): introducao envolvente e contextualizada (25-30 palavras).
+- SLOT 2 (Dor/Desejo/Duvida) + SLOT 3 (Solucao): desenvolvimento PROFUNDO e COMPLETO, cobrindo TODOS os pontos do texto original sem omitir nenhuma dica, questao ou exemplo (180-250+ palavras).
+- SLOT 4 (CTA): fechamento persuasivo com oferta/escassez (25-30 palavras).
+- REGRA CRITICA: Se o modo for remodelagem, PRESERVE INTEGRALMENTE todo o conteudo do texto de referencia. Nao resuma, nao omita detalhes. Reescreva mantendo a mesma densidade informativa.`
       );
     case "30s":
     default:
@@ -534,10 +561,10 @@ function normalizeVariation(v: Record<string, unknown>): Record<string, unknown>
   const fullBlocks = [obj.hook, obj.painOrDesire, obj.solution, obj.cta]
     .filter(Boolean)
     .join("\n\n");
-  const seoCaption =
-    (obj.seoCaption as string) && String(obj.seoCaption).trim().length > 0
-      ? String(obj.seoCaption)
-      : fullBlocks;
+
+  const fullScriptText = (obj.fullScriptText as string) || fullBlocks;
+
+  const seoCaption = fullScriptText;
   obj.seoCaption = seoCaption;
   obj.caption = seoCaption;
   obj.sceneDirection = (obj.sceneDirection as string) ||
@@ -608,11 +635,11 @@ async function callOpenRouter(
             const match = /use this slug instead:\s*([\w.\-/:]+)/i.exec(String(msg || ""));
             if (match?.[1]) hintSlug = match[1].trim();
           } catch {}
-          errorDetails.push(`[${model}] ${detail}`);
+          errorDetails.push(`[openrouter:${model}] ${detail}`);
 
           if (hintSlug && !models.includes(hintSlug)) {
             models.push(hintSlug);
-            errorDetails.push(`[${model}] -> tentando alternativa: ${hintSlug}`);
+            errorDetails.push(`[openrouter:${model}] -> tentando alternativa: ${hintSlug}`);
           }
 
           if (res.status === 429 || res.status === 401 || res.status === 403) {
@@ -625,11 +652,11 @@ async function callOpenRouter(
         const content = data.choices?.[0]?.message?.content || "";
 
         if (data.error?.message) {
-          errorDetails.push(`[${model}] ${String(data.error.message).slice(0, 160)}`);
+          errorDetails.push(`[openrouter:${model}] ${String(data.error.message).slice(0, 160)}`);
         }
 
         if (!content || content.trim().length === 0) {
-          errorDetails.push(`[${model}] resposta vazia`);
+          errorDetails.push(`[openrouter:${model}] resposta vazia`);
           continue;
         }
 
@@ -641,13 +668,13 @@ async function callOpenRouter(
           if (!bestResult || variations.length > bestResult.variations.length) {
             bestResult = { variations, usedModel: model };
           }
-          errorDetails.push(`[${model}] retornou ${variations.length}/${expectedQuantity} roteiros`);
+          errorDetails.push(`[openrouter:${model}] retornou ${variations.length}/${expectedQuantity} roteiros`);
         } else {
-          errorDetails.push(`[${model}] JSON nao parseado (${content.length} chars)`);
+          errorDetails.push(`[openrouter:${model}] JSON nao parseado (${content.length} chars)`);
         }
       } catch (err) {
         errorDetails.push(
-          `[${model}] ${err instanceof Error ? (err.name === "AbortError" ? "timeout (60s)" : err.message.slice(0, 120)) : "erro desconhecido"}`
+          `[openrouter:${model}] ${err instanceof Error ? (err.name === "AbortError" ? "timeout (60s)" : err.message.slice(0, 120)) : "erro desconhecido"}`
         );
         continue;
       } finally {
@@ -666,9 +693,178 @@ async function callOpenRouter(
 
   return {
     error:
-      "Todos os modelos e keys falharam. Nenhum retornou JSON valido. Detalhes: " +
-      summary,
+      "Todos os modelos OpenRouter falharam. " + summary,
   };
+}
+
+async function callGroq(
+  apiKey: string,
+  models: string[],
+  systemPrompt: string,
+  userPrompt: string,
+  expectedQuantity: number
+): Promise<{ variations: Record<string, unknown>[]; usedModel: string } | { error: string }> {
+  const MODEL_TIMEOUT = 60000;
+  let bestResult: { variations: Record<string, unknown>[]; usedModel: string } | null = null;
+  const errorDetails: string[] = [];
+
+  if (!apiKey?.trim()) {
+    return { error: "Groq API key nao fornecida" };
+  }
+
+  for (const model of models) {
+    const apiController = new AbortController();
+    const apiTimeout = setTimeout(() => apiController.abort(), MODEL_TIMEOUT);
+
+    try {
+      const maxTokens = Math.min(8192, 2000 + expectedQuantity * 1100);
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + apiKey,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.8,
+        }),
+        signal: apiController.signal,
+      });
+
+      if (!res.ok) {
+        let detail = "HTTP " + res.status;
+        try {
+          const errData = await res.json();
+          const msg = errData?.error?.message || "";
+          if (msg) detail += ": " + String(msg).slice(0, 160);
+        } catch {}
+        errorDetails.push(`[groq:${model}] ${detail}`);
+        if (res.status === 429 || res.status === 401 || res.status === 403) break;
+        continue;
+      }
+
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content || "";
+
+      if (!content || content.trim().length === 0) {
+        errorDetails.push(`[groq:${model}] resposta vazia`);
+        continue;
+      }
+
+      const variations = parseJsonResponse(content);
+      if (variations && variations.length > 0) {
+        if (variations.length >= expectedQuantity) {
+          return { variations, usedModel: model };
+        }
+        if (!bestResult || variations.length > bestResult.variations.length) {
+          bestResult = { variations, usedModel: model };
+        }
+        errorDetails.push(`[groq:${model}] retornou ${variations.length}/${expectedQuantity} roteiros`);
+      } else {
+        errorDetails.push(`[groq:${model}] JSON nao parseado (${content.length} chars)`);
+      }
+    } catch (err) {
+      errorDetails.push(
+        `[groq:${model}] ${err instanceof Error ? (err.name === "AbortError" ? "timeout (60s)" : err.message.slice(0, 120)) : "erro desconhecido"}`
+      );
+      continue;
+    } finally {
+      clearTimeout(apiTimeout);
+    }
+  }
+
+  if (bestResult) return bestResult;
+
+  const uniqueDetails = [...new Set(errorDetails)].slice(0, 5);
+  const summary = uniqueDetails.length > 0 ? uniqueDetails.join(" | ") : "Nenhuma requisicao foi concluida";
+
+  return { error: "Todos os modelos Groq falharam. " + summary };
+}
+
+async function callOllama(
+  models: string[],
+  systemPrompt: string,
+  userPrompt: string,
+  expectedQuantity: number
+): Promise<{ variations: Record<string, unknown>[]; usedModel: string } | { error: string }> {
+  const MODEL_TIMEOUT = 90000;
+  let bestResult: { variations: Record<string, unknown>[]; usedModel: string } | null = null;
+  const errorDetails: string[] = [];
+
+  for (const model of models) {
+    const apiController = new AbortController();
+    const apiTimeout = setTimeout(() => apiController.abort(), MODEL_TIMEOUT);
+
+    try {
+      const maxTokens = Math.min(8192, 2000 + expectedQuantity * 1100);
+      const res = await fetch("http://localhost:11434/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.8,
+          stream: false,
+        }),
+        signal: apiController.signal,
+      });
+
+      if (!res.ok) {
+        let detail = "HTTP " + res.status;
+        try {
+          const errData = await res.json();
+          const msg = errData?.error?.message || "";
+          if (msg) detail += ": " + String(msg).slice(0, 160);
+        } catch {}
+        errorDetails.push(`[ollama:${model}] ${detail}`);
+        continue;
+      }
+
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content || "";
+
+      if (!content || content.trim().length === 0) {
+        errorDetails.push(`[ollama:${model}] resposta vazia`);
+        continue;
+      }
+
+      const variations = parseJsonResponse(content);
+      if (variations && variations.length > 0) {
+        if (variations.length >= expectedQuantity) {
+          return { variations, usedModel: model };
+        }
+        if (!bestResult || variations.length > bestResult.variations.length) {
+          bestResult = { variations, usedModel: model };
+        }
+        errorDetails.push(`[ollama:${model}] retornou ${variations.length}/${expectedQuantity} roteiros`);
+      } else {
+        errorDetails.push(`[ollama:${model}] JSON nao parseado (${content.length} chars)`);
+      }
+    } catch (err) {
+      errorDetails.push(
+        `[ollama:${model}] ${err instanceof Error ? (err.name === "AbortError" ? "timeout (90s)" : err.message.slice(0, 120)) : "erro desconhecido"}`
+      );
+      continue;
+    } finally {
+      clearTimeout(apiTimeout);
+    }
+  }
+
+  if (bestResult) return bestResult;
+
+  const uniqueDetails = [...new Set(errorDetails)].slice(0, 5);
+  const summary = uniqueDetails.length > 0 ? uniqueDetails.join(" | ") : "Nenhuma requisicao foi concluida";
+
+  return { error: "Todos os modelos Ollama falharam. " + summary };
 }
 
 export async function POST(request: NextRequest) {
@@ -689,6 +885,8 @@ export async function POST(request: NextRequest) {
       apiKeys,
       mode,
       rawContent,
+      provider: requestedProvider,
+      groqApiKey,
     } = body;
 
     const isRemodelMode =
@@ -709,24 +907,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const keyList: string[] = [];
+    const openrouterKeys: string[] = [];
     if (Array.isArray(apiKeys) && apiKeys.length > 0) {
-      keyList.push(...apiKeys.filter((k: string) => k?.trim()));
+      openrouterKeys.push(...apiKeys.filter((k: string) => k?.trim()));
     }
-    if (apiKey?.trim() && !keyList.includes(apiKey)) {
-      keyList.push(apiKey);
+    if (apiKey?.trim() && !openrouterKeys.includes(apiKey)) {
+      openrouterKeys.push(apiKey);
     }
     const headerToken = request.headers.get("x-ai-custom-token")?.trim();
-    if (headerToken && !keyList.includes(headerToken)) {
-      keyList.push(headerToken);
+    if (headerToken && !openrouterKeys.includes(headerToken)) {
+      openrouterKeys.push(headerToken);
     }
 
-    if (keyList.length === 0) {
-      return NextResponse.json(
-        { error: "Nenhuma API Key do OpenRouter configurada" },
-        { status: 400 }
-      );
-    }
+    const groqKey = groqApiKey || request.headers.get("x-groq-key") || "";
 
     const quantity = Math.max(1, Math.min(20, Math.floor(count || 5)));
     const objectiveList: string[] = Array.isArray(objectives)
@@ -741,6 +934,7 @@ export async function POST(request: NextRequest) {
           mode,
           rawContent: effectiveContent,
           count: quantity,
+          duration: duration || duracao,
           niche: typeof niche === "string" ? niche : undefined,
           objectives: objectiveList.length ? objectiveList : undefined,
           publicoAlvo: typeof publicoAlvo === "string" ? publicoAlvo : undefined,
@@ -760,15 +954,53 @@ export async function POST(request: NextRequest) {
     const selectedModel =
       model && model !== "google/gemma-4-26b-a4b-it:free" ? model : DEFAULT_MODEL;
 
-    const modelsToTry = [selectedModel];
-    for (const rm of RECOMMENDED_FREE_MODELS) {
-      if (!modelsToTry.includes(rm)) modelsToTry.push(rm);
-    }
-    for (const pm of PAID_FALLBACK_MODELS) {
-      if (!modelsToTry.includes(pm)) modelsToTry.push(pm);
+    const providerPriority = requestedProvider === "groq"
+      ? ["groq", "openrouter", "ollama"]
+      : requestedProvider === "ollama"
+        ? ["ollama", "groq", "openrouter"]
+        : ["openrouter", "groq", "ollama"];
+
+    let result: { variations: Record<string, unknown>[]; usedModel: string } | { error: string } | null = null;
+    const allErrors: string[] = [];
+
+    for (const provider of providerPriority) {
+      if (provider === "openrouter" && openrouterKeys.length > 0) {
+        const modelsToTry = [selectedModel];
+        for (const rm of RECOMMENDED_FREE_MODELS) {
+          if (!modelsToTry.includes(rm)) modelsToTry.push(rm);
+        }
+        for (const pm of PAID_FALLBACK_MODELS) {
+          if (!modelsToTry.includes(pm)) modelsToTry.push(pm);
+        }
+        result = await callOpenRouter(openrouterKeys, modelsToTry, SYSTEM_INSTRUCTION, userPrompt, quantity);
+        if (!("error" in result)) break;
+        allErrors.push(`[openrouter] ${result.error}`);
+        result = null;
+      }
+
+      if (provider === "groq" && groqKey?.trim()) {
+        const groqModels = [...GROQ_FREE_MODELS];
+        result = await callGroq(groqKey, groqModels, SYSTEM_INSTRUCTION, userPrompt, quantity);
+        if (!("error" in result)) break;
+        allErrors.push(`[groq] ${result.error}`);
+        result = null;
+      }
+
+      if (provider === "ollama") {
+        result = await callOllama([...OLLAMA_MODELS], SYSTEM_INSTRUCTION, userPrompt, quantity);
+        if (!("error" in result)) break;
+        allErrors.push(`[ollama] ${result.error}`);
+        result = null;
+      }
     }
 
-    const result = await callOpenRouter(keyList, modelsToTry, SYSTEM_INSTRUCTION, userPrompt, quantity);
+    if (!result) {
+      const providerSummary = allErrors.length > 0 ? allErrors.join(" | ") : "Nenhum provider configurado";
+      return NextResponse.json(
+        { error: "Todos os providers falharam. Detalhes: " + providerSummary },
+        { status: 502 }
+      );
+    }
 
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 502 });
@@ -796,6 +1028,12 @@ export async function POST(request: NextRequest) {
       success: true,
       variations,
       usedModel: result.usedModel,
+      provider: providerPriority.find(p => {
+        if (p === "openrouter" && openrouterKeys.length > 0) return true;
+        if (p === "groq" && groqKey?.trim()) return true;
+        if (p === "ollama") return true;
+        return false;
+      }) || "openrouter",
       ...(modularityCheck.warnings.length > 0
         ? { _modularityWarnings: modularityCheck.warnings }
         : {}),

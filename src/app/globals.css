@@ -1,16 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #09090e;
+  --background: #08080c;
   --foreground: #f0f0f5;
   --primary: #ec4899;
   --primary-hover: #db2777;
   --primary-glow: rgba(236, 72, 153, 0.15);
-  --secondary: #111118;
-  --surface: #161622;
-  --surface-hover: #1c1c2a;
+  --secondary: #101018;
+  --surface: #151520;
+  --surface-hover: #1a1a28;
   --border: #222236;
   --border-subtle: #1a1a2c;
+  --card: #101018;
+  --card-border: rgba(39, 39, 52, 0.8);
+  --input-bg: #151520;
+  --input-border: #222236;
   --text-primary: #f0f0f5;
   --text-secondary: #7a7a94;
   --accent-pink: #ec4899;
@@ -18,12 +22,15 @@
   --accent-green: #10b981;
   --accent-orange: #f59e0b;
   --accent-red: #ef4444;
-  --radius: 14px;
-  --radius-sm: 10px;
+  --danger: #ef4444;
+  --radius: 16px;
+  --radius-sm: 12px;
   --radius-lg: 20px;
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
-  --shadow-card-hover: 0 4px 12px rgba(236,72,153,0.15), 0 12px 40px rgba(0,0,0,0.4);
-  --shadow-glow: 0 0 30px rgba(236,72,153,0.12);
+  --radius-pill: 9999px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.4);
+  --shadow-card-hover: 0 4px 12px rgba(236,72,153,0.12), 0 16px 48px rgba(0,0,0,0.5);
+  --shadow-glow: 0 0 30px rgba(236,72,153,0.1);
+  --gradient-hero: linear-gradient(135deg, rgba(236,72,153,0.15) 0%, rgba(6,182,212,0.15) 100%);
 }
 
 * {
@@ -71,23 +78,23 @@ body {
 
 /* ====================== GLASS ====================== */
 .glass {
-  background: rgba(17, 17, 24, 0.85);
+  background: rgba(16, 16, 24, 0.85);
   backdrop-filter: blur(24px) saturate(1.2);
-  border: 1px solid rgba(236, 72, 153, 0.08);
+  border: 1px solid rgba(236, 72, 153, 0.06);
 }
 
 .glass-card {
-  background: linear-gradient(145deg, rgba(17, 17, 24, 0.7), rgba(22, 22, 34, 0.5));
+  background: var(--card);
   backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .glass-card:hover {
-  background: linear-gradient(145deg, rgba(22, 22, 34, 0.8), rgba(17, 17, 24, 0.6));
-  border-color: rgba(236, 72, 153, 0.25);
+  background: #13131e;
+  border-color: rgba(236, 72, 153, 0.2);
   box-shadow: var(--shadow-card-hover);
   transform: translateY(-1px);
 }
@@ -199,6 +206,7 @@ body {
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 4px 16px rgba(236, 72, 153, 0.25);
 }
 .btn-primary::after {
   content: '';
@@ -211,20 +219,20 @@ body {
 .btn-primary:hover {
   background: linear-gradient(135deg, #db2777, #9d174d);
   transform: translateY(-1px);
-  box-shadow: 0 8px 25px rgba(236, 72, 153, 0.35);
+  box-shadow: 0 8px 28px rgba(236, 72, 153, 0.35);
 }
 .btn-primary:hover::after { opacity: 1; }
 .btn-primary:active { transform: translateY(0); }
 
 .btn-secondary {
-  background: var(--secondary);
+  background: var(--card);
   color: white;
   padding: 12px 24px;
   border-radius: var(--radius-sm);
   font-weight: 600;
   font-size: 14px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid var(--border);
+  border: 1px solid var(--card-border);
   cursor: pointer;
 }
 .btn-secondary:hover {
@@ -234,8 +242,8 @@ body {
 
 /* ====================== INPUTS ====================== */
 .input-field {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: white;
   padding: 11px 16px;
   border-radius: var(--radius-sm);
@@ -246,7 +254,7 @@ body {
 .input-field:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-glow);
+  box-shadow: 0 0 0 3px var(--primary-glow), 0 0 20px rgba(236, 72, 153, 0.08);
 }
 .input-field::placeholder {
   color: var(--text-secondary);
@@ -267,8 +275,36 @@ textarea.input-field {
 
 /* ====================== TABS ====================== */
 .tab-active {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.12), rgba(244, 63, 94, 0.08));
+  border-color: rgba(236, 72, 153, 0.35);
+  color: white;
+}
+
+.tab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+.tab-pill-active {
   background: linear-gradient(135deg, rgba(236, 72, 153, 0.15), rgba(244, 63, 94, 0.1));
-  border-color: rgba(236, 72, 153, 0.4);
+  border-color: rgba(236, 72, 153, 0.3);
+  color: white;
+  box-shadow: 0 0 16px rgba(236, 72, 153, 0.1);
+}
+.tab-pill-inactive {
+  background: var(--card);
+  border-color: var(--card-border);
+  color: var(--text-secondary);
+}
+.tab-pill-inactive:hover {
+  border-color: rgba(236, 72, 153, 0.2);
+  color: white;
 }
 
 /* ====================== DIVIDERS ====================== */
@@ -306,8 +342,8 @@ textarea.input-field {
 
 /* ====================== VIDEO ====================== */
 .video-placeholder {
-  background: linear-gradient(145deg, #13131f, #0a0a12);
-  border: 2px dashed var(--border);
+  background: linear-gradient(145deg, #0c0c14, #08080c);
+  border: 2px dashed var(--card-border);
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
@@ -350,3 +386,86 @@ textarea.input-field {
 .text-balance { text-wrap: balance; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ====================== DESIGN SYSTEM: DARK STUDIO ====================== */
+.card-premium {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card-premium:hover {
+  border-color: rgba(236, 72, 153, 0.15);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.input-premium {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: white;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.input-premium:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow), 0 0 24px rgba(236, 72, 153, 0.06);
+}
+.input-premium::placeholder {
+  color: var(--text-secondary);
+}
+
+.badge-premium {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.chip-active {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.15), rgba(244, 63, 94, 0.1));
+  border-color: rgba(236, 72, 153, 0.35);
+  color: white;
+  box-shadow: 0 0 12px rgba(236, 72, 153, 0.08);
+}
+
+.chip-inactive {
+  background: var(--card);
+  border-color: var(--card-border);
+  color: var(--text-secondary);
+}
+.chip-inactive:hover {
+  border-color: rgba(236, 72, 153, 0.2);
+  color: white;
+}
+
+/* Gradient neon border for focused/selected elements */
+.neon-border {
+  position: relative;
+}
+.neon-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--primary), #8b5cf6, var(--accent-cyan));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.neon-border:focus-within::before,
+.neon-border.active::before {
+  opacity: 1;
+}

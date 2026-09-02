@@ -14,6 +14,7 @@ import {
   Paintbrush,
   CalendarDays,
   Store,
+  Video,
 } from "lucide-react";
 
 const menuItems = [
@@ -25,6 +26,7 @@ const menuItems = [
   { icon: CalendarDays, label: "Calendario", href: "/calendar" },
   { icon: Share2, label: "Publicacao", href: "/publish" },
   { icon: FileStack, label: "Juntar PDF", href: "/pdf-merge" },
+  { icon: Video, label: "Vídeos", href: "/videos" },
   { icon: Paintbrush, label: "SpeedPaint", href: "/speed-paint" },
 ];
 
@@ -36,12 +38,12 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-[72px] h-screen shrink-0 bg-[#0a0d14]/70 backdrop-blur-xl border-r border-white/10 flex flex-col relative">
+    <aside className="w-[72px] h-screen shrink-0 bg-[#101018]/80 backdrop-blur-xl border-r border-zinc-800/80 flex flex-col relative">
       {/* Ambient glow */}
       <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[var(--primary)]/5 to-transparent pointer-events-none" />
 
       {/* Logo */}
-      <div className="h-16 flex items-center justify-center border-b border-[var(--border-subtle)] shrink-0 relative z-10">
+      <div className="h-16 flex items-center justify-center border-b border-zinc-800/60 shrink-0 relative z-10">
         <Link href="/dashboard">
           <div className="w-11 h-11 rounded-[14px] bg-gradient-to-br from-[var(--primary)] to-[var(--accent-pink)] flex items-center justify-center shadow-lg shadow-[var(--primary)]/20 hover:shadow-[var(--primary)]/40 transition-shadow duration-300">
             <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
@@ -77,7 +79,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom */}
-      <div className="px-2.5 pb-4 border-t border-[var(--border-subtle)] pt-3 relative z-10">
+      <div className="px-2.5 pb-4 border-t border-zinc-800/60 pt-3 relative z-10">
         <ul className="space-y-1.5">
           {bottomItems.map((item) => {
             const isActive = pathname === item.href;

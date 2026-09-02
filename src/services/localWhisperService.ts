@@ -9,6 +9,9 @@
  * do Turbopack/Next.js — eliminando tanto "Cannot convert undefined or null
  * to object" (empacotamento WASM/ONNX) quanto
  * "__turbopack_context__.x is not a function".
+ *
+ * Correcao: Progress callback agora trata 'downloading' e 'ready' status.
+ * Mecanismo de timeout/stall detection para downloads travados.
  */
 
 const TRANSFORMERS_CDN_URL =
@@ -53,6 +56,9 @@ type NativeImporter = (url: string) => Promise<unknown>;
 let transformersModule: TransformersModule | null = null;
 const transcriberCache = new Map<WhisperModelId, Promise<Transcriber>>();
 
+const STALL_TIMEOUT_MS = 15000;
+const STALL_CHECK_INTERVAL_MS = 2000;
+
 /**
  * Carregador nativo que contorna 100% a analise estatica do bundler: o
  * `import(url)` acontece dentro de um `new Function`, fora do alcance do
@@ -80,13 +86,47 @@ async function loadTransformers(): Promise<TransformersModule> {
   }
 }
 
+/**
+ * Cria um monitor de stall (travamento) para detectar downloads congelados.
+ * Se nao houver progresso em `STALL_TIMEOUT_MS`, aborta e rejeita.
+ */
+function createStallDetector(
+  onStall: () => void
+): { update: () => void; stop: () => void } {
+  let lastActivity = Date.now();
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  const update = () => {
+    lastActivity = Date.now();
+  };
+
+  const stop = () => {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
+
+  timer = setInterval(() => {
+    if (Date.now() - lastActivity > STALL_TIMEOUT_MS) {
+      stop();
+      onStall();
+    }
+  }, STALL_CHECK_INTERVAL_MS);
+
+  return { update, stop };
+}
+
 async function getTranscriber(
   model: WhisperModelId,
-  onProgress?: (p: WhisperProgress) => void
+  onProgress?: (p: WhisperProgress) => void,
+  signal?: AbortSignal
 ): Promise<Transcriber> {
-  if (!transcriberCache.has(model)) {
+  const cacheKey = model;
+
+  if (!transcriberCache.has(cacheKey)) {
     transcriberCache.set(
-      model,
+      cacheKey,
       (async () => {
         const transformers = await loadTransformers();
         return transformers.pipeline("automatic-speech-recognition", model, {
@@ -95,7 +135,19 @@ async function getTranscriber(
       })()
     );
   }
-  return transcriberCache.get(model) as Promise<Transcriber>;
+
+  return transcriberCache.get(cacheKey) as Promise<Transcriber>;
+}
+
+/**
+ * Limpa o cache do transcriber para forcar recarregamento.
+ */
+export function clearTranscriberCache(model?: WhisperModelId): void {
+  if (model) {
+    transcriberCache.delete(model);
+  } else {
+    transcriberCache.clear();
+  }
 }
 
 async function extractAudioData(file: File): Promise<Float32Array> {
@@ -120,12 +172,23 @@ export const LocalWhisperService = {
   /**
    * Transcreve um arquivo de video ou audio para texto (pt-BR).
    * modelName seleciona o modelo Whisper; onProgress recebe (0-100, mensagem).
+   * AbortController pode ser usado para cancelar a operacao.
    */
   async transcribeFile(
     file: File,
     modelName: WhisperModelId = "Xenova/whisper-tiny",
-    onProgress?: (pct: number, msg: string) => void
+    onProgress?: (pct: number, msg: string) => void,
+    externalSignal?: AbortSignal
   ): Promise<string> {
+    const abortController = new AbortController();
+    const signal = externalSignal ?? abortController.signal;
+
+    let stallDetector: { update: () => void; stop: () => void } | null = null;
+
+    const cleanup = () => {
+      stallDetector?.stop();
+    };
+
     try {
       onProgress?.(10, "Isolando a faixa de audio do arquivo...");
 
@@ -138,34 +201,77 @@ export const LocalWhisperService = {
         );
       }
 
+      if (signal.aborted) {
+        throw new Error("Operacao cancelada pelo usuario.");
+      }
+
       onProgress?.(25, "Inicializando o motor Whisper no navegador...");
 
-      const transcriber = await getTranscriber(modelName, (p) => {
-        if (p.status === "progress" && p.total && p.loaded !== undefined) {
-          const pct = Math.round((p.loaded / p.total) * 35) + 35;
-          onProgress?.(pct, `Baixando modelo Whisper (${pct}%)...`);
-        }
+      stallDetector = createStallDetector(() => {
+        onProgress?.(
+          lastProgress,
+          `Download travado. Tentando recuperar... (${Math.round(lastProgress)}%)`
+        );
+        clearTranscriberCache(modelName);
+        abortController.abort(new Error("Download stall detected"));
       });
+
+      let lastProgress = 25;
+
+      const transcriber = await getTranscriber(modelName, (p) => {
+        stallDetector?.update();
+
+        if (p.status === "downloading" && p.total && p.loaded !== undefined) {
+          const pct = Math.round((p.loaded / p.total) * 40) + 30;
+          lastProgress = pct;
+          onProgress?.(pct, `Baixando modelo Whisper (${pct}%)...`);
+        } else if (p.status === "progress" && p.total && p.loaded !== undefined) {
+          const pct = Math.round((p.loaded / p.total) * 40) + 30;
+          lastProgress = pct;
+          onProgress?.(pct, `Baixando modelo Whisper (${pct}%)...`);
+        } else if (p.status === "ready") {
+          lastProgress = 70;
+          onProgress?.(70, "Modelo carregado. Preparando transcricao...");
+        } else if (p.status === "done") {
+          lastProgress = 75;
+          onProgress?.(75, "Modelo pronto. Iniciando transcricao...");
+        }
+      }, signal);
+
+      stallDetector.stop();
 
       if (!transcriber) {
         throw new Error("Falha ao instanciar o pipeline Web.");
       }
 
-      onProgress?.(75, "Transcrevendo a fala em portugues...");
+      if (signal.aborted) {
+        throw new Error("Operacao cancelada pelo usuario.");
+      }
+
+      onProgress?.(80, "Transcrevendo a fala em portugues...");
 
       const output = await transcriber(audioData, {
         language: "portuguese",
         task: "transcribe",
-        chunk_length_s: 30,
-        stride_length_s: 5,
+        chunk_length_s: 60,
+        stride_length_s: 0,
+        return_timestamps: false,
+        max_new_tokens: 448,
       });
+
+      onProgress?.(95, "Processando texto transcrito...");
 
       onProgress?.(100, "Transcricao finalizada com sucesso!");
       return typeof output === "string" ? output : output.text || "";
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new Error("Operacao cancelada pelo usuario.");
+      }
       const msg = err instanceof Error ? err.message : "Falha ao processar a transcricao local.";
       console.warn("Whisper Web (CDN nativo) falhou:", err);
       throw new Error(msg);
+    } finally {
+      cleanup();
     }
   },
 };

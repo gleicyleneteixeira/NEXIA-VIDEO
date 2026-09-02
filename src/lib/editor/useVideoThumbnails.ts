@@ -66,6 +66,7 @@ export function useVideoThumbnails(item: TimelineItem) {
       video.preload = "auto";
       video.muted = true;
       video.playsInline = true;
+      video.setAttribute("playsinline", "");
       video.src = src;
 
       canvas = document.createElement("canvas");

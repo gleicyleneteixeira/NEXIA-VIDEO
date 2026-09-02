@@ -310,7 +310,7 @@ export default function ExportPanel() {
   };
 
   return (
-    <div className="p-3 space-y-4 max-h-[calc(100vh-120px)] overflow-y-auto" style={{ backgroundColor: "#0d0d16" }}>
+    <div className="p-3 space-y-4 max-h-[calc(100vh-120px)] overflow-y-auto" style={{ backgroundColor: "#101018" }}>
       <div className="flex items-center gap-2 text-gray-400">
         <Settings size={14} />
         <span className="text-xs font-semibold uppercase tracking-wider">Exportar</span>
@@ -324,10 +324,10 @@ export default function ExportPanel() {
               <button
                 key={f.id}
                 onClick={() => setFormat(f.id)}
-                className={`px-2 py-2 text-[10px] rounded-lg border transition-all flex flex-col items-center gap-0.5 ${
+                className={`px-2 py-2 text-[10px] rounded-xl border transition-all flex flex-col items-center gap-0.5 ${
                   format === f.id
                     ? "bg-[#8b5cf6]/10 border-[#8b5cf6] text-white"
-                    : "bg-[#13131f] border-[#1e1e2e] text-gray-400 hover:border-[#8b5cf6]/50"
+                    : "bg-[#151520] border-zinc-800/80 text-gray-400 hover:border-[#8b5cf6]/50"
                 }`}
               >
                 <span className="font-semibold">{f.label}</span>
@@ -344,10 +344,10 @@ export default function ExportPanel() {
               <button
                 key={p.id}
                 onClick={() => handlePresetChange(p.id)}
-                className={`px-2 py-2 text-[10px] rounded-lg border transition-all ${
+                className={`px-2 py-2 text-[10px] rounded-xl border transition-all ${
                   preset === p.id
                     ? "bg-[#8b5cf6]/10 border-[#8b5cf6] text-white"
-                    : "bg-[#13131f] border-[#1e1e2e] text-gray-400 hover:border-[#8b5cf6]/50"
+                    : "bg-[#151520] border-zinc-800/80 text-gray-400 hover:border-[#8b5cf6]/50"
                 }`}
               >
                 <div className="font-semibold">{p.label}</div>
@@ -366,10 +366,10 @@ export default function ExportPanel() {
               <button
                 key={f.value}
                 onClick={() => setFps(f.value)}
-                className={`px-2 py-2 text-[10px] rounded-lg border transition-all flex flex-col items-center gap-0.5 ${
+                className={`px-2 py-2 text-[10px] rounded-xl border transition-all flex flex-col items-center gap-0.5 ${
                   fps === f.value
                     ? "bg-[#8b5cf6]/10 border-[#8b5cf6] text-white"
-                    : "bg-[#13131f] border-[#1e1e2e] text-gray-400 hover:border-[#8b5cf6]/50"
+                    : "bg-[#151520] border-zinc-800/80 text-gray-400 hover:border-[#8b5cf6]/50"
                 }`}
               >
                 <span className="font-semibold">{f.value}</span>
@@ -386,10 +386,10 @@ export default function ExportPanel() {
               <button
                 key={r.value}
                 onClick={() => setResolution(r.value)}
-                className={`px-2 py-2 text-[10px] rounded-lg border transition-all flex flex-col items-center gap-0.5 ${
+                className={`px-2 py-2 text-[10px] rounded-xl border transition-all flex flex-col items-center gap-0.5 ${
                   resolution === r.value
                     ? "bg-[#8b5cf6]/10 border-[#8b5cf6] text-white"
-                    : "bg-[#13131f] border-[#1e1e2e] text-gray-400 hover:border-[#8b5cf6]/50"
+                    : "bg-[#151520] border-zinc-800/80 text-gray-400 hover:border-[#8b5cf6]/50"
                 }`}
               >
                 <span className="font-semibold">{r.label}</span>
@@ -407,7 +407,7 @@ export default function ExportPanel() {
                   type="number"
                   value={customWidth}
                   onChange={(e) => setCustomWidth(Number(e.target.value))}
-                  className="w-full px-2 py-1.5 text-[10px] rounded border border-[#1e1e2e] bg-[#08080d] text-gray-300 focus:border-[#8b5cf6] focus:outline-none"
+                  className="w-full px-2 py-1.5 text-[10px] rounded-lg border border-zinc-800/80 bg-[#151520] text-gray-300 focus:border-[#8b5cf6] focus:outline-none"
                 />
               </div>
               <div className="flex-1">
@@ -416,7 +416,7 @@ export default function ExportPanel() {
                   type="number"
                   value={customHeight}
                   onChange={(e) => setCustomHeight(Number(e.target.value))}
-                  className="w-full px-2 py-1.5 text-[10px] rounded border border-[#1e1e2e] bg-[#08080d] text-gray-300 focus:border-[#8b5cf6] focus:outline-none"
+                  className="w-full px-2 py-1.5 text-[10px] rounded-lg border border-zinc-800/80 bg-[#151520] text-gray-300 focus:border-[#8b5cf6] focus:outline-none"
                 />
               </div>
             </div>
@@ -434,7 +434,7 @@ export default function ExportPanel() {
             max={50}
             value={bitrate}
             onChange={(e) => setBitrate(Number(e.target.value))}
-            className="w-full h-1.5 bg-[#1e1e2e] rounded-full appearance-none cursor-pointer accent-[#8b5cf6]"
+            className="w-full h-1.5 bg-zinc-800/80 rounded-full appearance-none cursor-pointer accent-[#8b5cf6]"
           />
           <div className="flex justify-between text-[8px] text-gray-600 mt-0.5">
             <span>1 Mbps</span>
@@ -442,12 +442,12 @@ export default function ExportPanel() {
           </div>
         </div>
 
-        <div className="bg-[#08080d] rounded-lg p-3 border border-[#1e1e2e]">
+        <div className="bg-[#151520] rounded-xl p-3 border border-zinc-800/80">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] text-gray-500">Qualidade</span>
             <span className="text-[10px] font-semibold text-gray-300">{quality.label}</span>
           </div>
-          <div className="w-full h-2 bg-[#1e1e2e] rounded-full overflow-hidden">
+          <div className="w-full h-2 bg-zinc-800/80 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full bg-gradient-to-r ${quality.color} transition-all`}
               style={{ width: `${quality.percent}%` }}
@@ -463,7 +463,7 @@ export default function ExportPanel() {
               className={`px-2 py-1 text-[9px] rounded-full border transition-all ${
                 resolution === "custom" && customWidth === qf.width && customHeight === qf.height
                   ? "bg-[#8b5cf6]/10 border-[#8b5cf6] text-white"
-                  : "bg-[#13131f] border-[#1e1e2e] text-gray-500 hover:border-[#8b5cf6]/50"
+                  : "bg-[#151520] border-zinc-800/80 text-gray-500 hover:border-[#8b5cf6]/50"
               }`}
             >
               {qf.label} ({qf.width}x{qf.height})
@@ -471,7 +471,7 @@ export default function ExportPanel() {
           ))}
         </div>
 
-        <div className="bg-[#13131f] rounded-lg p-3 space-y-1.5 border border-[#1e1e2e]">
+        <div className="bg-[#151520] rounded-xl p-3 space-y-1.5 border border-zinc-800/80">
           <div className="flex items-center gap-2 text-[10px] text-gray-500 mb-2">
             <Monitor size={12} />
             <span>Informações da Timeline</span>
@@ -494,7 +494,7 @@ export default function ExportPanel() {
           </div>
         </div>
 
-        <div className="bg-[#08080d] rounded-lg p-4 border border-[#1e1e2e]">
+        <div className="bg-[#151520] rounded-xl p-4 border border-zinc-800/80">
           <div className="flex items-center gap-2 text-[10px] text-gray-500 mb-3">
             <Zap size={12} />
             <span>Resumo da Exportação</span>
@@ -542,7 +542,7 @@ export default function ExportPanel() {
 
       {isExporting && (
         <div className="space-y-1">
-          <div className="w-full h-2 bg-[#1e1e2e] rounded-full overflow-hidden">
+          <div className="w-full h-2 bg-zinc-800/80 rounded-full overflow-hidden">
             <div
               className="h-full bg-[#8b5cf6] rounded-full transition-all"
               style={{ width: `${exportProgress}%` }}

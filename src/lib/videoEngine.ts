@@ -260,6 +260,7 @@ export async function concatenateVideosFFmpeg(
       // anteriores ANTES de escrever, para nao acumular no disco virtual.
       for (const f of fileNames) await safeUnlink(ffmpeg, f);
       await safeUnlink(ffmpeg, outputFile);
+      await safeUnlink(ffmpeg, "concat.txt");
 
       if (safeOnProgress) safeOnProgress(10);
 
@@ -272,7 +273,11 @@ export async function concatenateVideosFFmpeg(
         }
         const data = await readFileToArray(input);
         if (data.byteLength === 0) throw new Error(`Input ${i + 1} data is empty (0 bytes)`);
+        
+        // Limpa arquivo anterior se existir (evita FS error)
+        await safeUnlink(ffmpeg, fileNames[i]);
         await ffmpeg.writeFile(fileNames[i], data);
+        console.log(`[FFmpeg] Written ${fileNames[i]} (${data.byteLength} bytes)`);
         if (safeOnProgress) safeOnProgress(10 + Math.round((i + 1) / n * 30));
       }
 
@@ -281,13 +286,26 @@ export async function concatenateVideosFFmpeg(
 
       if (transition !== "none" && n >= 2) {
         // Transicoes (fade/wipe) exigem re-encode via xfade. Sonda duracoes p/ offsets.
-        const durations: number[] = [];
-        for (let i = 0; i < n; i++) {
-          const url = URL.createObjectURL(inputs[i]);
-          durations.push(await getOutputDuration(url));
-          URL.revokeObjectURL(url);
+        const effectiveDurations: number[] = durations && durations.length === n
+          ? durations
+          : [];
+        if (effectiveDurations.length === 0) {
+          for (let i = 0; i < n; i++) {
+            // Verifica se o arquivo existe no FS antes de tentar ler duracao
+            try {
+              await ffmpeg.readFile(fileNames[i]);
+              const url = URL.createObjectURL(inputs[i]);
+              effectiveDurations.push(await getOutputDuration(url));
+              URL.revokeObjectURL(url);
+            } catch {
+              // Se nao conseguir ler, usa duracao estimada de 5s
+              console.warn(`[FFmpeg] Nao foi possivel obter duracao de ${fileNames[i]}, usando 5s`);
+              effectiveDurations.push(5);
+            }
+          }
         }
-        await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, transition, transitionDuration, durations);
+        console.log(`[FFmpeg] Duracoes para transicoes:`, effectiveDurations);
+        await ffmpegReEncode(ffmpeg, fileNames, outputFile, format, transition, transitionDuration, effectiveDurations);
       } else {
         // SEM TRANSICAO: -c copy puro (concat demuxer). Cópia instantânea
         // de streams sem re-encode. Se falhar (codecs incompatíveis), faz
@@ -457,7 +475,8 @@ async function ffmpegReEncode(
       const outVideo = `v_out_${i}`;
       const outAudio = `a_out_${i}`;
 
-      const offset = accumulatedTime - transitionDuration;
+      // Garante offset minimo de 0.04s para evitar erro no xfade
+      const offset = Math.max(0.04, accumulatedTime - transitionDuration);
 
       filterComplex += `[${currentVideo}][${nextVideo}]xfade=transition=${transitionName}:duration=${transitionDuration}:offset=${offset.toFixed(3)}[${outVideo}]; `;
       filterComplex += `[${currentAudio}][${nextAudio}]acrossfade=d=${transitionDuration}:c1=tri:c2=tri[${outAudio}]; `;
@@ -465,7 +484,7 @@ async function ffmpegReEncode(
       currentVideo = outVideo;
       currentAudio = outAudio;
 
-      accumulatedTime = accumulatedTime + durations[i] - transitionDuration;
+      accumulatedTime = offset + transitionDuration + Math.max(0, durations[i] - transitionDuration);
     }
 
     // Map final outputs
@@ -477,12 +496,12 @@ async function ffmpegReEncode(
 
   const inputs: string[] = [];
   for (const f of fileNames) {
-    // Reconstroi PTS de cada entrada para evitar saltos de tempo.
-    // (sem `+async`: nao e sub-flag valida de -fflags no FFmpeg.wasm)
-    inputs.push("-fflags", "+genpts", "-avoid_negative_ts", "make_zero", "-i", f);
+    inputs.push("-i", f);
   }
 
   await ffmpeg.exec([
+    "-fflags", "+genpts",
+    "-avoid_negative_ts", "make_zero",
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[outv]",
@@ -497,9 +516,6 @@ async function ffmpegReEncode(
     "-c:a", "aac",
     "-ar", "44100",
     "-b:a", "96k",
-    "-avoid_negative_ts", "make_zero",
-    "-fflags", "+genpts",
-    "-async", "1",
     "-movflags", "+faststart",
     "-y",
     outputFile

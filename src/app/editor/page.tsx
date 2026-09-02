@@ -387,8 +387,8 @@ export default function EditorPage() {
   ];
 
   return (
-    <div className="h-screen bg-[#08080d] flex flex-col overflow-hidden">
-      <header className="flex items-center h-10 bg-[#0d0d16] border-b border-[#1e1e2e] px-3 flex-shrink-0">
+    <div className="h-screen bg-[#08080c] flex flex-col overflow-hidden">
+      <header className="flex items-center h-10 bg-[#101018] border-b border-zinc-800/80 px-3 flex-shrink-0">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -453,7 +453,7 @@ export default function EditorPage() {
       <div className="flex flex-1 overflow-hidden min-h-0">
         {sidebarOpen && (
           <div className="flex flex-shrink-0">
-            <div className="w-[72px] bg-[#0a0a12] border-r border-[#1e1e2e] flex flex-col items-center py-2 gap-0.5 overflow-y-auto">
+            <div className="w-[72px] bg-[#101018] border-r border-zinc-800/80 flex flex-col items-center py-2 gap-0.5 overflow-y-auto">
               {sidebarItems.map((item) => {
                 const active = sidebarTab === item.id && sidebarOpen;
                 return (
@@ -465,7 +465,7 @@ export default function EditorPage() {
                     className={`w-full flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-lg transition-colors ${
                       active
                         ? "bg-[#8b5cf6]/15 text-[#8b5cf6] shadow-[inset_0_0_0_1px_rgba(139,92,246,0.35)]"
-                        : "text-gray-500 hover:bg-[#1e1e2e] hover:text-gray-300"
+                        : "text-gray-500 hover:bg-[#1a1a28] hover:text-gray-300"
                     }`}
                     title={item.label}
                   >
@@ -478,8 +478,8 @@ export default function EditorPage() {
               })}
             </div>
 
-            <div className="w-[300px] bg-[#0d0d16] border-r border-[#1e1e2e] flex flex-col overflow-hidden">
-              <div className="flex-shrink-0 flex items-center justify-between px-2 h-7 bg-[#0a0a12] border-b border-[#1e1e2e]">
+            <div className="w-[300px] bg-[#101018] border-r border-zinc-800/80 flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 flex items-center justify-between px-2 h-7 bg-[#0c0c14] border-b border-zinc-800/80">
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                   {sidebarItems.find((i) => i.id === sidebarTab)?.label}
                 </span>
@@ -533,7 +533,7 @@ export default function EditorPage() {
 
       {/* Alça horizontal: puxar para cima aumenta a timeline (min 220px → max 65vh). */}
       <div
-        className="group h-1.5 flex-shrink-0 bg-[#16161f] hover:bg-emerald-500/70 active:bg-emerald-400 cursor-row-resize touch-none transition-colors z-30 flex items-center justify-center"
+        className="group h-1.5 flex-shrink-0 bg-[#101018] hover:bg-emerald-500/70 active:bg-emerald-400 cursor-row-resize touch-none transition-colors z-30 flex items-center justify-center"
         title="Redimensionar a timeline"
         onPointerDown={handleTimelineResizeStart}
         onPointerMove={handleTimelineResizeMove}

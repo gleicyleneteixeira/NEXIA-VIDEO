@@ -21,6 +21,7 @@ export interface SavedScriptVariation {
 export interface SavedScriptProject {
   id: string;
   topic: string;
+  headline?: string;
   niche: string;
   createdAt: string;
   variationsCount: number;
@@ -71,6 +72,26 @@ export const ScriptHistoryService = {
 
   async clearAllHistory(): Promise<void> {
     localStorage.removeItem(STORAGE_KEY);
+  },
+
+  /**
+   * Remove entradas de teste contendo topic ou headline com as palavras-chave
+   * fornecidas (padrão: Detran, prova teórica, psicotécnico).
+   */
+  async cleanupTestEntries(
+    keywords: string[] = ["Detran", "prova teórica", "psicotécnico"]
+  ): Promise<number> {
+    const history = await this.getHistory();
+    const cleaned = history.filter((item) => {
+      const topicLower = (item.topic || "").toLowerCase();
+      const headlineLower = (item.headline || "").toLowerCase();
+      const combined = topicLower + " " + headlineLower;
+      return !keywords.some((kw) => combined.includes(kw.toLowerCase()));
+    });
+    if (cleaned.length !== history.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+    }
+    return history.length - cleaned.length;
   },
 
   async updateProject(id: string, patch: Partial<SavedScriptProject>): Promise<void> {

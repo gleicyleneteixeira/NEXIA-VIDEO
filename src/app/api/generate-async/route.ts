@@ -6,6 +6,7 @@ const DURATIONS: Record<string, { label: string; words: number; hint: string }> 
   "30s": { label: "30 segundos (Padrao Reels/TikTok)", words: 70, hint: "Hook + Dor + CTA. Ritmo rapido, 1-2 frases por bloco. Direto ao ponto." },
   "60s": { label: "60 segundos (Desenvolvimento Completo)", words: 140, hint: "Hook + Dor + Desejo + CTA completo. Desenvolvimento medio com detalhes suficientes." },
   "90s": { label: "90 segundos (Aprofundado)", words: 210, hint: "Estrutura completa com exemplos, dados ou storytelling. Hook elaborado, CTA com urgencia." },
+  "90s_plus": { label: "90s+ (Aprofundado / Sem Limite)", words: 300, hint: "Conteudo estendido e sem limite. Cobre TODOS os pontos do texto original sem omitir detalhes. Ideal para remodelagem fiel de videos longos." },
 };
 
 function buildSystemPrompt(hasMultipleObjectives: boolean, durationConfig: { label: string; words: number; hint: string } | null, quantity: number) {

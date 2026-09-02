@@ -95,7 +95,7 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#08080c]">
       <div className="max-w-4xl w-full">
         {/* Progress Bar */}
         <div className="mb-8">
@@ -108,7 +108,7 @@ export default function OnboardingPage() {
                     ? "bg-[var(--accent-green)] text-white"
                     : index === currentStep
                     ? "bg-gradient-to-br " + step.color + " text-white pulse-glow"
-                    : "bg-[var(--surface)] text-[var(--text-secondary)] border border-[var(--border)]"
+                    : "bg-[#101018] text-[var(--text-secondary)] border border-zinc-800/80"
                 }`}
               >
                 {index < currentStep || completedSteps.includes(index) ? (
@@ -128,7 +128,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Content */}
-        <div className="glass-card rounded-2xl p-8">
+        <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-8 shadow-xl">
           <div className="grid md:grid-cols-2 gap-8">
             {/* Left - Video */}
             <div className="video-placeholder">
@@ -259,7 +259,7 @@ export default function OnboardingPage() {
           </div>
 
           {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-[var(--border)]">
+          <div className="flex items-center justify-between mt-8 pt-6 border-t border-zinc-800/60">
             <button
               onClick={handleSkip}
               className="text-[var(--text-secondary)] hover:text-white transition-colors text-sm"

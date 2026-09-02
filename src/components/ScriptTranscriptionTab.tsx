@@ -22,7 +22,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { LocalWhisperService, WHISPER_MODELS } from "@/services/localWhisperService";
+import { LocalWhisperService, WHISPER_MODELS, clearTranscriberCache } from "@/services/localWhisperService";
 import type { WhisperModelId } from "@/services/localWhisperService";
 import { TranscriptionHistoryService } from "@/services/transcriptionHistoryService";
 import type { TranscriptionHistoryItem } from "@/services/transcriptionHistoryService";
@@ -54,6 +54,8 @@ export default function ScriptTranscriptionTab({
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [isHistorySelectionMode, setIsHistorySelectionMode] = useState(false);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
+  const [lastFile, setLastFile] = useState<File | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Carrega o historico de transcricoes salvas (IndexedDB) no mount
   useEffect(() => {
@@ -86,11 +88,15 @@ export default function ScriptTranscriptionTab({
     }
 
     setFileName(file.name);
+    setLastFile(file);
     setStatus("working");
     setProgress(0);
     setError("");
     setTranscribedText("");
     setStatusText("Preparando...");
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const result = await LocalWhisperService.transcribeFile(
@@ -99,7 +105,8 @@ export default function ScriptTranscriptionTab({
         (pct, msg) => {
           setProgress(pct);
           setStatusText(msg);
-        }
+        },
+        controller.signal
       );
       setTranscribedText(result);
       setStatus("done");
@@ -116,6 +123,8 @@ export default function ScriptTranscriptionTab({
       const msg = err instanceof Error ? err.message : "Falha ao transcrever o arquivo.";
       setError(msg);
       setStatus("error");
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
@@ -140,15 +149,24 @@ export default function ScriptTranscriptionTab({
   };
 
   const handleReset = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setStatus("idle");
     setProgress(0);
     setStatusText("");
     setError("");
     setTranscribedText("");
     setFileName(null);
+    setLastFile(null);
     setSelectedHistoryIds([]);
     setIsHistorySelectionMode(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleRetry = async () => {
+    if (!lastFile) return;
+    clearTranscriberCache(model);
+    await handleFile(lastFile);
   };
 
   const handleLoadFromHistory = (item: TranscriptionHistoryItem) => {
@@ -290,9 +308,30 @@ export default function ScriptTranscriptionTab({
       )}
 
       {status === "error" && (
-        <div className="p-4 rounded-[12px] bg-[var(--danger)]/10 border border-[var(--danger)]/20 text-[var(--danger)] text-sm flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-          <p>{error}</p>
+        <div className="space-y-3">
+          <div className="p-4 rounded-[12px] bg-[var(--danger)]/10 border border-[var(--danger)]/20 text-[var(--danger)] text-sm flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <p>{error}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {lastFile && (
+              <button
+                type="button"
+                onClick={() => void handleRetry()}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-[10px] text-sm font-medium bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/30 hover:bg-[var(--primary)]/25 transition-colors"
+              >
+                <RefreshCcw className="w-4 h-4" />
+                Tentar Novamente
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleReset}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-[10px] text-sm text-[var(--text-secondary)] hover:text-white transition-colors"
+            >
+              Limpar
+            </button>
+          </div>
         </div>
       )}
 

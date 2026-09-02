@@ -550,7 +550,7 @@ export default function ScriptPage() {
       ═══════════════════════════════════════════════════════════════ */}
       {step === "profile" && (
         <div className="max-w-xl animate-slide-up">
-          <div className="glass-card rounded-[var(--radius)] p-6 space-y-6">
+          <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-6 space-y-6 shadow-xl">
             <div className="flex items-center gap-2">
               <User className="w-5 h-5 text-[var(--primary)]" />
               <h2 className="text-lg font-bold">Perfil de Negocio</h2>
@@ -609,7 +609,7 @@ export default function ScriptPage() {
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="Ex: Autoescola Nexa Drive"
-                  className="input-field w-full px-4 py-3 rounded-[12px] text-sm"
+                  className="input-field w-full px-4 py-3 rounded-xl text-sm"
                 />
               </div>
               <div>
@@ -621,7 +621,7 @@ export default function ScriptPage() {
                   value={formNicho}
                   onChange={(e) => setFormNicho(e.target.value)}
                   placeholder="Ex: Saude, Financas, Fitness..."
-                  className="input-field w-full px-4 py-3 rounded-[12px] text-sm"
+                  className="input-field w-full px-4 py-3 rounded-xl text-sm"
                 />
               </div>
               <div>
@@ -633,7 +633,7 @@ export default function ScriptPage() {
                   value={formPublico}
                   onChange={(e) => setFormPublico(e.target.value)}
                   placeholder="Ex: Empreendedores, Maes, Estudantes..."
-                  className="input-field w-full px-4 py-3 rounded-[12px] text-sm"
+                  className="input-field w-full px-4 py-3 rounded-xl text-sm"
                 />
               </div>
               <div>
@@ -645,7 +645,7 @@ export default function ScriptPage() {
                   value={formProduto}
                   onChange={(e) => setFormProduto(e.target.value)}
                   placeholder="Ex: Curso, Consultoria, E-book..."
-                  className="input-field w-full px-4 py-3 rounded-[12px] text-sm"
+                  className="input-field w-full px-4 py-3 rounded-xl text-sm"
                 />
               </div>
               <button
@@ -679,10 +679,10 @@ export default function ScriptPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSubTab("create")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                 subTab === "create"
                   ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
-                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+                  : "bg-[#101018] border border-zinc-800/80 text-[var(--text-secondary)] hover:text-white"
               }`}
             >
               <Sparkles className="w-4 h-4" />
@@ -690,10 +690,10 @@ export default function ScriptPage() {
             </button>
             <button
               onClick={() => setSubTab("transcribe")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                 subTab === "transcribe"
                   ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
-                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+                  : "bg-[#101018] border border-zinc-800/80 text-[var(--text-secondary)] hover:text-white"
               }`}
             >
               <Mic className="w-4 h-4" />
@@ -701,10 +701,10 @@ export default function ScriptPage() {
             </button>
             <button
               onClick={() => setSubTab("download")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                 subTab === "download"
                   ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
-                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+                  : "bg-[#101018] border border-zinc-800/80 text-[var(--text-secondary)] hover:text-white"
               }`}
             >
               <Download className="w-4 h-4" />
@@ -712,10 +712,10 @@ export default function ScriptPage() {
             </button>
             <button
               onClick={() => setSubTab("gallery")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                 subTab === "gallery"
                   ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
-                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+                  : "bg-[#101018] border border-zinc-800/80 text-[var(--text-secondary)] hover:text-white"
               }`}
             >
               <LayoutGrid className="w-4 h-4" />
@@ -723,10 +723,10 @@ export default function ScriptPage() {
             </button>
             <button
               onClick={() => setSubTab("history")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-[12px] text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                 subTab === "history"
                   ? "bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20"
-                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white"
+                  : "bg-[#101018] border border-zinc-800/80 text-[var(--text-secondary)] hover:text-white"
               }`}
             >
               <History className="w-4 h-4" />
@@ -739,7 +739,7 @@ export default function ScriptPage() {
           {/* Left — Controls */}
           <div className="lg:col-span-1 space-y-4">
             {/* Active Profile Banner */}
-            <div className="glass-card rounded-[var(--radius)] p-4">
+            <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-4 shadow-lg">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-[8px] bg-[var(--accent-green)]/15 flex items-center justify-center flex-shrink-0">
@@ -761,14 +761,14 @@ export default function ScriptPage() {
             </div>
 
             {/* Theme */}
-            <div className="glass-card rounded-[var(--radius)] p-5">
+            <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-5 shadow-lg">
               <div className="flex items-center gap-2 mb-4">
                 <Lightbulb className="w-4 h-4 text-[var(--accent-orange)]" />
                 <h2 className="text-sm font-bold text-white">Tema / Ideia Central</h2>
               </div>
 
               {/* Origem do conteúdo: roteiro livre vs remodelagem de vídeo viral */}
-              <div className="flex items-center gap-1 p-1 bg-[var(--surface)] border border-[var(--border)] rounded-[10px] mb-3">
+              <div className="flex items-center gap-1 p-1 bg-[#151520] border border-zinc-800/80 rounded-[10px] mb-3">
                 <button
                   type="button"
                   onClick={() => setScriptMode("idea")}
@@ -802,7 +802,7 @@ export default function ScriptPage() {
                       ? "Ex: 3 erros que destroem seu trafego pago..."
                       : "Cole a transcricao do video viral que ja funcionou..."
                   }
-                  className="input-field w-full h-28 px-4 py-3 pr-12 rounded-[12px] resize-none"
+                  className="input-field w-full h-28 px-4 py-3 pr-12 rounded-xl resize-none"
                 />
                 <button
                   type="button"
@@ -855,7 +855,7 @@ export default function ScriptPage() {
             </div>
 
             {/* Settings */}
-            <div className="glass-card rounded-[var(--radius)] p-5">
+            <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-5 shadow-lg">
               <div className="flex items-center gap-2 mb-4">
                 <FileText className="w-4 h-4 text-[var(--primary)]" />
                 <h2 className="text-sm font-bold text-white">Configuracoes</h2>
@@ -869,7 +869,7 @@ export default function ScriptPage() {
                     max={20}
                     value={quantity}
                     onChange={(e) => setQuantity(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
-                    className="input-field w-full px-4 py-2.5 rounded-[12px]"
+                    className="input-field w-full px-4 py-2.5 rounded-xl"
                   />
                 </div>
 
@@ -883,10 +883,10 @@ export default function ScriptPage() {
                       <button
                         key={d.value}
                         onClick={() => setDuracao(d.value)}
-                        className={`flex flex-col items-center gap-0.5 px-2 py-2.5 rounded-[10px] border text-center transition-all duration-200 ${
+                        className={`flex flex-col items-center gap-0.5 px-2 py-2.5 rounded-xl border text-center transition-all duration-200 ${
                           duracao === d.value
                             ? "bg-[var(--primary)]/15 border-[var(--primary)]/35 text-white shadow-sm shadow-[var(--primary)]/8"
-                            : "bg-[var(--surface)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--border)]"
+                            : "bg-[#151520] border-zinc-800/80 text-[var(--text-secondary)] hover:border-zinc-700/80"
                         }`}
                       >
                         <span className="text-base">{d.emoji}</span>
@@ -914,7 +914,7 @@ export default function ScriptPage() {
                           className={`text-left px-3 py-2 rounded-full border text-xs transition-all duration-200 ${
                             isSelected
                               ? "bg-[var(--primary)]/15 border-[var(--primary)]/35 text-white shadow-sm shadow-[var(--primary)]/8"
-                              : "bg-[var(--surface)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--border)]"
+                              : "bg-[#151520] border-zinc-800/80 text-[var(--text-secondary)] hover:border-zinc-700/80"
                           }`}
                         >
                           <span className="mr-1">{obj.emoji}</span> {obj.label}
@@ -928,7 +928,7 @@ export default function ScriptPage() {
                       value={customObjective}
                       onChange={(e) => setCustomObjective(e.target.value)}
                       placeholder="Descreva o objetivo..."
-                      className="input-field w-full mt-2 px-4 py-2.5 rounded-[12px]"
+                      className="input-field w-full mt-2 px-4 py-2.5 rounded-xl"
                     />
                   )}
                   {selectedObjectives.length > 0 && (
@@ -944,7 +944,7 @@ export default function ScriptPage() {
             <button
               onClick={handleGenerateWithAI}
               disabled={isGenerating || !theme.trim()}
-              className="w-full py-3 px-4 rounded-[14px] font-semibold text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+              className="w-full py-3 px-4 rounded-2xl font-semibold text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-900/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
             >
               {isGenerating ? (
                 <>
@@ -999,10 +999,10 @@ export default function ScriptPage() {
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <h2 className="text-lg font-bold text-white">{variations.length} Variacoes Geradas</h2>
                   <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-[var(--surface)] border border-[var(--border)] rounded-[10px] p-0.5">
+                    <div className="flex items-center bg-[#151520] border border-zinc-800/80 rounded-full p-0.5">
                       <button
                         onClick={() => setViewMode("video")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-medium transition-all duration-200 ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
                           viewMode === "video"
                             ? "bg-[var(--primary)]/15 text-[var(--primary)] shadow-sm"
                             : "text-[var(--text-secondary)] hover:text-white"
@@ -1013,7 +1013,7 @@ export default function ScriptPage() {
                       </button>
                       <button
                         onClick={() => setViewMode("fragmented")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-medium transition-all duration-200 ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
                           viewMode === "fragmented"
                             ? "bg-[var(--accent-orange)]/15 text-[var(--accent-orange)] shadow-sm"
                             : "text-[var(--text-secondary)] hover:text-white"

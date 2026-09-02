@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Eye, EyeOff, Loader2, Sparkles } from "lucide-react";
+import { triggerWebhook } from "@/services/webhookService";
+import { Eye, EyeOff, Loader2, Mail, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -14,6 +15,22 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const router = useRouter();
   const supabase = createClient();
+
+  const handlePasswordReset = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await triggerWebhook("PASSWORD_RESET_REQUESTED", { email });
+      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      if (error) throw error;
+      alert("Email de redefinição de senha enviado!");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao enviar email de recuperacao";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +48,7 @@ export default function LoginPage() {
         });
         if (error) throw error;
         setError("");
+        await triggerWebhook("USER_CREATED", { email, name: email.split("@")[0] });
         alert("Conta criada! Verifique seu email para confirmar.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -145,18 +163,28 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-2">
             <button
               onClick={() => {
                 setIsRegister(!isRegister);
                 setError("");
               }}
-              className="text-sm text-gray-400 hover:text-[var(--primary)] transition-colors"
+              className="text-sm text-gray-400 hover:text-[var(--primary)] transition-colors block"
             >
               {isRegister
                 ? "Já tem conta? Faça login"
                 : "Não tem conta? Cadastre-se"}
             </button>
+            {!isRegister && (
+              <button
+                onClick={handlePasswordReset}
+                disabled={loading}
+                className="text-sm text-[var(--accent-pink)] hover:underline flex items-center justify-center gap-1 mx-auto transition-colors"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Esqueci minha senha
+              </button>
+            )}
           </div>
         </div>
       </div>

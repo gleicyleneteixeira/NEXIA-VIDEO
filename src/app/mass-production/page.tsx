@@ -391,6 +391,7 @@ export default function MassProductionPage() {
   const [transitionDuration, setTransitionDuration] = useState(0.5);
   const [cloudSaveEnabled, setCloudSaveEnabled] = useState(false);
   const [autoDownloadEnabled, setAutoDownloadEnabled] = useState(false);
+  const [lotTitle, setLotTitle] = useState("");
 
   const [queueStatus, setQueueStatus] = useState<QueueStatus>({
     isProcessing: false, current: 0, total: 0, percentage: 0, eta: "0:00",
@@ -447,6 +448,12 @@ export default function MassProductionPage() {
       case "solution": return solutionVideos;
       case "cta": return ctaVideos;
     }
+  };
+
+  const getFileName = (videoId: number, ext: string = "mp4") => {
+    const base = `Video_${String(videoId).padStart(2, "0")}`;
+    const suffix = lotTitle.trim() ? `_${lotTitle.trim().replace(/\s+/g, "_")}` : "";
+    return `${base}${suffix}.${ext}`;
   };
 
   const addSlotVideos = (cat: TagType, vids: UploadedVideo[]) => {
@@ -715,7 +722,8 @@ export default function MassProductionPage() {
           }
         });
         const inputs = buildSingleVariationTrackList(structureMode, slotFiles);
-        const result = await concatenateVideosFFmpeg(inputs, `variation_${videoId}.mp4`,
+        const fileName = getFileName(videoId);
+        const result = await concatenateVideosFFmpeg(inputs, fileName,
           (progress) => { setRenderedVideos((prev) => prev.map((v) => v.id === videoId ? { ...v, progress } : v)); },
           renderMode, videoFormat, transition, transitionDuration,
           variation.blocks.map((b) => Number(b.duration) || 0)
@@ -746,7 +754,7 @@ export default function MassProductionPage() {
           try {
             cloudUrl = await uploadVideoToSupabase(
               result.blob,
-              `Video_${String(videoId).padStart(2, "0")}.mp4`
+              getFileName(videoId)
             );
           } catch (uploadErr) {
             console.warn("[MassProduction] Upload Supabase falhou:", uploadErr);
@@ -775,7 +783,7 @@ export default function MassProductionPage() {
           try {
             const link = document.createElement("a");
             link.href = result.url;
-            link.download = `Video_${String(videoId).padStart(2, "0")}.mp4`;
+            link.download = getFileName(videoId);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -955,7 +963,7 @@ export default function MassProductionPage() {
     if (sourceUrl) {
       const link = document.createElement("a");
       link.href = sourceUrl;
-      link.download = `Video_${String(video.id).padStart(2, "0")}.mp4`;
+      link.download = getFileName(video.id);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1011,7 +1019,7 @@ export default function MassProductionPage() {
     try {
       const files: { name: string; blob: Blob }[] = [];
       for (const video of targets) {
-        const name = `Video_${String(video.id).padStart(2, "0")}.mp4`;
+        const name = getFileName(video.id);
         let blob: Blob | null = null;
         // Busca direto da URL pública do Supabase Storage quando hospedado na nuvem.
         if (video.videoUrl) {
@@ -1046,26 +1054,24 @@ export default function MassProductionPage() {
   const notPostedCount = renderedVideos.filter((v) => !v.is_posted && v.status === "ready").length;
 
   return (
-    <div className="max-w-7xl mx-auto p-6 md:p-8 min-h-screen">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <span className="p-2.5 rounded-xl bg-pink-500/10 text-pink-400 border border-pink-500/20">
-              <Factory className="w-6 h-6" />
-            </span>
-            <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Criacao em <span className="gradient-text">Massa</span></h1>
-              <p className="text-xs text-zinc-400 mt-0.5">Envie, classifique e gere variacoes automaticamente</p>
-            </div>
+    <div className="w-full max-w-7xl mx-auto p-6 md:p-8 min-h-screen space-y-6">
+      {/* ========== HEADER ========== */}
+      <div className="flex items-center justify-between pb-2">
+        <div className="flex items-center gap-4">
+          <span className="p-3 rounded-2xl bg-pink-500/10 text-pink-400 border border-pink-500/20">
+            <Factory className="w-6 h-6" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Criacao em <span className="gradient-text">Massa</span></h1>
+            <p className="text-sm text-zinc-400 mt-0.5">Envie clips, classifique e gere variacoes automaticamente</p>
           </div>
         </div>
         <div className="flex items-center gap-1 p-1 bg-[#111118] rounded-xl border border-zinc-800/80">
-          <button onClick={() => setActiveView("upload")} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeView === "upload" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>
+          <button onClick={() => setActiveView("upload")} className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "upload" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>
             Upload
           </button>
           <button onClick={() => setActiveView("results")} disabled={renderedVideos.length === 0}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${activeView === "results" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>
+            className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-50 ${activeView === "results" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>
             Resultados ({renderedVideos.length})
           </button>
         </div>
@@ -1074,94 +1080,118 @@ export default function MassProductionPage() {
       {/* ========== UPLOAD VIEW ========== */}
       {activeView === "upload" && (
         <>
-          {/* Seletor de Estrutura de Vídeo */}
-          <div className="flex flex-col gap-3 mb-6 p-4 bg-[#111118] border border-zinc-800/80 rounded-2xl sm:flex-row sm:items-center">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider shrink-0">
-              Estrutura do Video:
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              {(["2-slots", "3-slots", "4-slots"] as BulkStructureMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setStructureMode(mode)}
-                  className={`px-4 py-2.5 text-xs font-semibold rounded-xl transition-all ${
-                    structureMode === mode
-                      ? "bg-pink-950/40 text-pink-300 border-2 border-pink-500 shadow-md shadow-pink-500/20"
-                      : "bg-zinc-900/80 text-zinc-400 border border-zinc-800 hover:bg-zinc-800 hover:text-white"
-                  }`}
-                >
-                  {mode === "2-slots"
-                    ? "2 Slots (Gancho + Corpo/CTA)"
-                    : mode === "3-slots"
-                    ? "3 Slots (Gancho + Desenv + CTA)"
-                    : "4 Slots (Gancho + Dor + Solucao + CTA)"}
-                </button>
+          {/* ========== CARD: Estrutura + Uploads ========== */}
+          <div className="bg-[#111118] border border-zinc-800/80 rounded-2xl p-6 md:p-8 space-y-6">
+            {/* Estrutura do Video */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider shrink-0">
+                Estrutura do Video:
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {(["2-slots", "3-slots", "4-slots"] as BulkStructureMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setStructureMode(mode)}
+                    className={`px-4 py-2.5 text-xs font-semibold rounded-xl transition-all ${
+                      structureMode === mode
+                        ? "bg-pink-950/40 text-pink-300 border-2 border-pink-500 shadow-md shadow-pink-500/20"
+                        : "bg-zinc-900/80 text-zinc-400 border border-zinc-800 hover:bg-zinc-800 hover:text-white"
+                    }`}
+                  >
+                    {mode === "2-slots"
+                      ? "2 Slots (Gancho + Corpo/CTA)"
+                      : mode === "3-slots"
+                      ? "3 Slots (Gancho + Desenv + CTA)"
+                      : "4 Slots (Gancho + Dor + Solucao + CTA)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Upload Boxes Grid */}
+            <div className={`grid grid-cols-1 md:grid-cols-2 ${GRID_COLS_BY_COUNT[activeSlotIds.length] || "lg:grid-cols-4"} gap-4`}>
+              {BULK_MODALITIES_CONFIG[structureMode].map((slot) => (
+                <UploadBox
+                  key={slot.id}
+                  title={slot.title}
+                  category={slot.id}
+                  accentColor={SLOT_STYLE[slot.id].accentColor}
+                  description={SLOT_STYLE[slot.id].description}
+                  videos={getSlotVideos(slot.id)}
+                  onUpload={(f) => handleUpload(slot.id, f)}
+                  onRemove={(id) => handleRemove(slot.id, id)}
+                  onPlay={handlePlay}
+                  limit={MAX_VIDEOS_PER_CATEGORY}
+                />
               ))}
             </div>
-          </div>
 
-          <div className="bg-[#111118] border border-zinc-800/80 rounded-2xl p-5 mb-6 flex items-center gap-4">
-            <HardDrive className="w-5 h-5 text-zinc-400" />
-            <div className="flex-1">
-              <p className="text-sm text-zinc-300"><span className="font-semibold text-white">Limite por categoria:</span> {MAX_VIDEOS_PER_CATEGORY} videos</p>
-              <p className="text-xs text-zinc-500">Cada variacao combina 1 trecho de cada slot ativo na estrutura selecionada ({activeSlotIds.length} slots)</p>
+            {/* Limite info */}
+            <div className="flex items-center gap-4 p-4 rounded-xl bg-[#161622] border border-zinc-800/60">
+              <HardDrive className="w-5 h-5 text-zinc-400 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm text-zinc-300"><span className="font-semibold text-white">Limite por categoria:</span> {MAX_VIDEOS_PER_CATEGORY} videos</p>
+                <p className="text-xs text-zinc-500">Cada variacao combina 1 trecho de cada slot ativo ({activeSlotIds.length} slots)</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-semibold text-white">{totalLoaded} / {MAX_VIDEOS_PER_CATEGORY * activeSlotIds.length}</p>
+                <p className="text-xs text-zinc-500">arquivos carregados</p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-sm font-semibold text-white">{totalLoaded} / {MAX_VIDEOS_PER_CATEGORY * activeSlotIds.length}</p>
-              <p className="text-xs text-zinc-500">arquivos carregados</p>
-            </div>
           </div>
 
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${GRID_COLS_BY_COUNT[activeSlotIds.length] || "lg:grid-cols-4"} gap-4 my-6`}>
-            {BULK_MODALITIES_CONFIG[structureMode].map((slot) => (
-              <UploadBox
-                key={slot.id}
-                title={slot.title}
-                category={slot.id}
-                accentColor={SLOT_STYLE[slot.id].accentColor}
-                description={SLOT_STYLE[slot.id].description}
-                videos={getSlotVideos(slot.id)}
-                onUpload={(f) => handleUpload(slot.id, f)}
-                onRemove={(id) => handleRemove(slot.id, id)}
-                onPlay={handlePlay}
-                limit={MAX_VIDEOS_PER_CATEGORY}
-              />
-            ))}
-          </div>
+          {/* ========== GRID 2 COLUNAS: Configuracoes ========== */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Card Esquerda: Renderizacao & Formato */}
+            <div className="bg-[#111118] border border-zinc-800/80 rounded-2xl p-6 space-y-5">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-pink-500/10 border border-pink-500/20">⚙️</span>
+                Renderizacao & Formato
+              </h3>
 
-          <div className="bg-[#111118] border border-zinc-800/80 rounded-2xl p-6 mt-6">
-            <div className="flex flex-wrap gap-5 mb-5">
-              <div>
-                <p className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">Modo de Renderizacao:</p>
-                <div className="inline-flex rounded-xl bg-[#161622] p-1 border border-zinc-800">
-                  <button onClick={() => setRenderMode("fast")} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${renderMode === "fast" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>⚡ Rapido</button>
-                  <button onClick={() => setRenderMode("compatibility")} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${renderMode === "compatibility" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>🛠️ Compativel</button>
+              {/* Modo de Renderizacao */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Modo</label>
+                <div className="inline-flex rounded-xl bg-[#161622] p-1 border border-zinc-800 w-full">
+                  <button onClick={() => setRenderMode("fast")} className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${renderMode === "fast" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>⚡ Rapido</button>
+                  <button onClick={() => setRenderMode("compatibility")} className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${renderMode === "compatibility" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>🛠️ Compativel</button>
                 </div>
               </div>
-              <div>
-                <p className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">Formato do Video:</p>
-                <div className="inline-flex rounded-xl bg-[#161622] p-1 border border-zinc-800">
+
+              {renderMode === "compatibility" && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2">
+                  <span className="text-amber-400 text-xs">⚠️ Modo Compatibilidade: re-renderiza frame a frame e pode levar mais tempo.</span>
+                </div>
+              )}
+
+              {/* Formato do Video */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Formato</label>
+                <div className="grid grid-cols-3 gap-2">
                   {VIDEO_FORMATS.map((fmt) => (
-                    <button key={fmt.value} onClick={() => setVideoFormat(fmt)} className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${videoFormat.value === fmt.value ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>
-                      {fmt.value === "9:16" ? "📱" : fmt.value === "16:9" ? "🖥️" : fmt.value === "1:1" ? "⬜" : "📷"} {fmt.label}
+                    <button key={fmt.value} onClick={() => setVideoFormat(fmt)} className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs font-semibold transition-all ${videoFormat.value === fmt.value ? "bg-pink-950/40 text-pink-300 border-2 border-pink-500 shadow-md shadow-pink-500/20" : "bg-zinc-900/80 text-zinc-400 border border-zinc-800 hover:bg-zinc-800 hover:text-white"}`}>
+                      <span className="text-lg">{fmt.value === "9:16" ? "📱" : fmt.value === "16:9" ? "🖥️" : "⬜"}</span>
+                      <span>{fmt.label}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div>
-                <p className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">Transicao de Video:</p>
-                <div className="inline-flex rounded-xl bg-[#161622] p-1 border border-zinc-800">
-                  <button onClick={() => setTransition("none")} className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${transition === "none" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>Nenhuma</button>
-                  <button onClick={() => setTransition("fade")} className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${transition === "fade" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>🎬 Fade</button>
-                  <button onClick={() => setTransition("wipe")} className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${transition === "wipe" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>↕️ Wipe</button>
+              {/* Transicao */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Transicao</label>
+                <div className="inline-flex rounded-xl bg-[#161622] p-1 border border-zinc-800 w-full">
+                  <button onClick={() => setTransition("none")} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${transition === "none" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>Nenhuma</button>
+                  <button onClick={() => setTransition("fade")} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${transition === "fade" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>Fade</button>
+                  <button onClick={() => setTransition("wipe")} className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${transition === "wipe" ? "bg-pink-600 text-white shadow-lg shadow-pink-600/25" : "text-zinc-400 hover:text-white"}`}>Wipe</button>
                 </div>
               </div>
+
               {transition !== "none" && (
-                <div className="flex flex-col justify-center">
-                  <p className="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-2">Duracao:</p>
-                  <div className="flex items-center gap-2">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Duracao da Transicao</label>
+                  <div className="flex items-center gap-3">
                     <input
                       type="range"
                       min="0.2"
@@ -1169,73 +1199,100 @@ export default function MassProductionPage() {
                       step="0.1"
                       value={transitionDuration}
                       onChange={(e) => setTransitionDuration(Number(e.target.value))}
-                      className="accent-pink-500 w-24 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
+                      className="flex-1 accent-pink-500 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
                     />
-                    <span className="text-xs font-mono text-white">{transitionDuration}s</span>
+                    <span className="text-sm font-mono text-white bg-[#161622] px-3 py-1 rounded-lg border border-zinc-800">{transitionDuration}s</span>
                   </div>
                 </div>
               )}
             </div>
 
-            {renderMode === "compatibility" && (
-              <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2">
-                <span className="text-amber-400 text-sm">⚠️ Modo Compatibilidade: o processo re-renderiza frame a frame e pode levar mais tempo.</span>
-              </div>
-            )}
+            {/* Card Direita: Opcoes & Acoes */}
+            <div className="bg-[#111118] border border-zinc-800/80 rounded-2xl p-6 space-y-5">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-pink-500/10 border border-pink-500/20">🎯</span>
+                Opcoes & Acoes
+              </h3>
 
-            {/* Toggles de opcoes */}
-            <div className="flex items-center gap-5 mb-5 flex-wrap">
-              <label className="flex items-center gap-2.5 cursor-pointer group">
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={cloudSaveEnabled}
-                    onChange={(e) => setCloudSaveEnabled(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-zinc-700 rounded-full peer peer-checked:bg-pink-600 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+              {/* Toggles */}
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Preferencias</label>
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between p-3 rounded-xl bg-[#161622] border border-zinc-800/60 cursor-pointer group hover:border-zinc-700 transition-colors">
+                    <div>
+                      <span className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors block">Salvar na Nuvem</span>
+                      <span className="text-xs text-zinc-500">Upload automatico para o Supabase Storage</span>
+                    </div>
+                    <div className="relative">
+                      <input type="checkbox" checked={cloudSaveEnabled} onChange={(e) => setCloudSaveEnabled(e.target.checked)} className="sr-only peer" />
+                      <div className="w-10 h-5 bg-zinc-700 rounded-full peer peer-checked:bg-pink-600 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                    </div>
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-xl bg-[#161622] border border-zinc-800/60 cursor-pointer group hover:border-zinc-700 transition-colors">
+                    <div>
+                      <span className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors block">Auto-Download</span>
+                      <span className="text-xs text-zinc-500">Baixar .mp4 automaticamente ao concluir</span>
+                    </div>
+                    <div className="relative">
+                      <input type="checkbox" checked={autoDownloadEnabled} onChange={(e) => setAutoDownloadEnabled(e.target.checked)} className="sr-only peer" />
+                      <div className="w-10 h-5 bg-zinc-700 rounded-full peer peer-checked:bg-pink-600 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                    </div>
+                  </label>
                 </div>
-                <span className="text-xs font-semibold text-zinc-300 group-hover:text-white transition-colors">Salvar na Nuvem</span>
-              </label>
-
-              <label className="flex items-center gap-2.5 cursor-pointer group">
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={autoDownloadEnabled}
-                    onChange={(e) => setAutoDownloadEnabled(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-zinc-700 rounded-full peer peer-checked:bg-pink-600 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
-                </div>
-                <span className="text-xs font-semibold text-zinc-300 group-hover:text-white transition-colors">Auto-Download</span>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-zinc-800/60">
-              <div className="flex items-center gap-2 text-lg font-bold flex-wrap">
-                {activeColumns.map((col, i) => (
-                  <span key={col.key} className="flex items-center gap-2">
-                    {i > 0 && <span className="text-zinc-500">×</span>}
-                    <span className={`px-4 py-2 rounded-xl border ${
-                      SLOT_CHIP_COLOR[col.key as TagType]
-                    }`}>{col.count} {col.label}</span>
-                  </span>
-                ))}
-                {activeColumns.length > 0 && (
-                  <>
-                    <span className="text-zinc-500">=</span>
-                    <span className="px-4 py-2 rounded-xl bg-pink-950/40 text-pink-300 border border-pink-500/20">{totalCombinations} Videos</span>
-                  </>
-                )}
-                {!activeColumns.length && <span className="text-sm text-zinc-500 font-normal">Adicione videos para ver o calculo</span>}
               </div>
-              <button onClick={generateCombinations} disabled={queueStatus.isProcessing || !minColumnsOk}
-                className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3.5 text-sm shadow-lg shadow-pink-600/25">
-                {queueStatus.isProcessing ? (<><RefreshCw className="w-5 h-5 animate-spin" /> Renderizando fila...</>) : (<><Sparkles className="w-5 h-5" /> Gerar {totalCombinations} Variacoes</>)}
-              </button>
+
+              {/* Nome do Lote */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Nome do Lote (Opcional)</label>
+                <input
+                  type="text"
+                  value={lotTitle}
+                  onChange={(e) => setLotTitle(e.target.value)}
+                  placeholder="Ex: campanha_junho, lote1, promocao_verao..."
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#161622] border border-zinc-800 text-sm text-white placeholder-zinc-500 focus:border-pink-500 focus:outline-none transition-colors"
+                  maxLength={50}
+                />
+                <p className="text-xs text-zinc-500">
+                  {lotTitle.trim()
+                    ? `Os arquivos serao salvos como: Video_01_${lotTitle.trim().replace(/\s+/g, "_")}.mp4`
+                    : "Os arquivos serao salvos como: Video_01.mp4"}
+                </p>
+              </div>
+
+              {/* Resumo de Combinacoes */}
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Combinacoes</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {activeColumns.map((col, i) => (
+                    <span key={col.key} className="flex items-center gap-2">
+                      {i > 0 && <span className="text-zinc-500">×</span>}
+                      <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${SLOT_CHIP_COLOR[col.key as TagType]}`}>{col.count} {col.label}</span>
+                    </span>
+                  ))}
+                  {activeColumns.length > 0 && (
+                    <>
+                      <span className="text-zinc-500">=</span>
+                      <span className="px-3 py-1.5 rounded-lg text-sm font-bold bg-pink-950/40 text-pink-300 border border-pink-500/20">{totalCombinations} Videos</span>
+                    </>
+                  )}
+                  {!activeColumns.length && <span className="text-sm text-zinc-500">Adicione videos para ver o calculo</span>}
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* ========== CTA: Botao Gerar ========== */}
+          <button
+            onClick={generateCombinations}
+            disabled={queueStatus.isProcessing || !minColumnsOk}
+            className="w-full h-14 bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:opacity-95 text-white font-bold text-base rounded-2xl shadow-lg shadow-pink-600/25 border border-pink-400/30 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {queueStatus.isProcessing ? (
+              <><RefreshCw className="w-5 h-5 animate-spin" /> Renderizando fila...</>
+            ) : (
+              <><Sparkles className="w-5 h-5" /> Gerar {totalCombinations} Variacoes</>
+            )}
+          </button>
         </>
       )}
 

@@ -689,7 +689,9 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
           } catch {}
         };
         video.addEventListener("canplay", onReady);
-        video.load();
+        if (video.readyState < 1) {
+          video.load();
+        }
         return () => video.removeEventListener("canplay", onReady);
       }
     } else {
@@ -834,6 +836,7 @@ function VisualLayer({ item, fps, isPrimary, videoRef: externalRef, onSelect }: 
           data-media={item.id}
           className="w-full h-full pointer-events-none"
           playsInline
+          muted
           preload="auto"
           style={{ filter: mediaFilter, opacity: chromaXray ? 0 : 1 }}
           onLoadedMetadata={handleVideoLoaded}

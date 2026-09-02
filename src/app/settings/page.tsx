@@ -18,17 +18,20 @@ import {
   Cpu,
   RefreshCw,
   Loader2,
+  Webhook,
 } from "lucide-react";
 import { useOpenRouterModel } from "@/hooks/useOpenRouterModel";
 import { AiKeyService } from "@/services/aiKeyService";
 import { useAiApiKey } from "@/hooks/useAiApiKey";
+import { createClient } from "@/lib/supabase/client";
+import { triggerWebhook } from "@/services/webhookService";
 
 const aiProviders = [
   {
-    id: "grok",
-    name: "Grok (xAI)",
-    description: "IA gratuita do xAI - Recomendado",
-    url: "https://console.x.ai",
+    id: "groq",
+    name: "Groq (Llama 3.3)",
+    description: "Provedor ultra-rápido de modelos open-source (Groq Cloud)",
+    url: "https://console.groq.com/keys",
     free: true,
   },
   {
@@ -39,18 +42,11 @@ const aiProviders = [
     free: false,
   },
   {
-    id: "openai",
-    name: "OpenAI (GPT)",
-    description: "ChatGPT e GPT-4",
-    url: "https://platform.openai.com",
-    free: false,
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic (Claude)",
-    description: "Claude 3.5 Sonnet",
-    url: "https://console.anthropic.com",
-    free: false,
+    id: "ollama",
+    name: "Ollama (Local)",
+    description: "Modelos rodando localmente - sem necessidade de API key",
+    url: "https://ollama.com",
+    free: true,
   },
 ];
 
@@ -79,13 +75,16 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("api");
   const [isMounted, setIsMounted] = useState(false);
   const [providerKeys, setProviderKeys] = useState<Record<string, string>>((): Record<string, string> => {
-    const existing = AiKeyService.getToken();
-    if (!existing) return {};
-    return { openrouter: existing };
+    const groqKey = AiKeyService.getGroqToken();
+    const openrouterKey = AiKeyService.getToken();
+    const result: Record<string, string> = {};
+    if (groqKey) result.groq = groqKey;
+    if (openrouterKey) result.openrouter = openrouterKey;
+    return result;
   });
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
-  const [selectedProvider, setSelectedProvider] = useState("grok");
+  const [selectedProvider, setSelectedProvider] = useState("groq");
 
   const [notifications, setNotifications] = useState<Record<string, boolean>>({
     email: true,
@@ -93,6 +92,10 @@ export default function SettingsPage() {
     updates: false,
     marketing: false,
   });
+
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookEnabled, setWebhookEnabled] = useState(true);
+  const [webhookSaved, setWebhookSaved] = useState(false);
 
   const [preferences, setPreferences] = useState({
     language: "pt-BR",
@@ -103,10 +106,12 @@ export default function SettingsPage() {
 
   const handleSaveApiKey = (provider: string) => {
     const value = (providerKeys[provider] || "").trim();
-    if (!value) {
-      return;
-    }
-    const ok = saveKey(value);
+    if (!value && provider !== "ollama") return;
+    const ok = provider === "groq"
+      ? AiKeyService.setGroqToken(value)
+      : provider === "ollama"
+        ? true
+        : saveKey(value);
     if (ok) {
       setSavedKeys((prev) => ({ ...prev, [provider]: true }));
       setTimeout(() => {
@@ -124,10 +129,30 @@ export default function SettingsPage() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("system_settings")
+          .select("key, value")
+          .in("key", ["global_webhook_url", "global_webhook_enabled"]);
+        if (error || !data) return;
+        const urlRow = data.find((s) => s.key === "global_webhook_url");
+        const enabledRow = data.find((s) => s.key === "global_webhook_enabled");
+        if (urlRow) setWebhookUrl(urlRow.value || "");
+        if (enabledRow) setWebhookEnabled(enabledRow.value !== "false");
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
   const tabs = [
     { id: "api", label: "API Keys", icon: Key },
     { id: "models", label: "Modelos de IA", icon: Cpu },
     { id: "notifications", label: "Notificações", icon: Bell },
+    { id: "webhooks", label: "Webhooks", icon: Webhook },
     { id: "preferences", label: "Preferências", icon: Palette },
     { id: "security", label: "Segurança", icon: Shield },
   ];
@@ -150,15 +175,15 @@ export default function SettingsPage() {
       <div className="grid lg:grid-cols-4 gap-6">
         {/* Tabs */}
         <div className="lg:col-span-1">
-          <div className="glass-card rounded-xl p-2">
+          <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-2 shadow-xl">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${
+                className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                   activeTab === tab.id
-                    ? "bg-gradient-to-r from-[var(--primary)]/20 to-[var(--accent-pink)]/20 text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
+                    ? "bg-gradient-to-r from-[var(--primary)]/15 to-[var(--accent-pink)]/10 text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[#1a1a28]"
                 }`}
               >
                 <tab.icon
@@ -177,7 +202,7 @@ export default function SettingsPage() {
           {/* API Keys Tab */}
           {activeTab === "api" && (
             <div className="space-y-6">
-              <div className="glass-card rounded-xl p-6">
+              <div className="bg-[#101018] border border-zinc-800/80 rounded-2xl p-6 shadow-xl">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--primary)] to-[var(--accent-pink)] flex items-center justify-center">
                     <Key className="w-5 h-5 text-white" />
@@ -219,7 +244,7 @@ export default function SettingsPage() {
                         Economize com IAs Gratuitas
                       </p>
                       <p className="text-sm text-[var(--text-secondary)]">
-                        Use o Grok (xAI) que é gratuito! Suas chaves são
+                        Use o Groq (Llama 3.3) que é gratuito! Suas chaves são
                         criptografadas e salvas apenas no seu dispositivo.
                       </p>
                     </div>
@@ -233,7 +258,7 @@ export default function SettingsPage() {
                       className={`p-4 rounded-xl transition-all ${
                         selectedProvider === provider.id
                           ? "bg-gradient-to-r from-[var(--primary)]/10 to-[var(--accent-pink)]/10 border border-[var(--primary)]/20"
-                          : "bg-[var(--surface)] border border-transparent"
+                          : "bg-[#151520] border border-zinc-800/80"
                       }`}
                     >
                       <div className="flex items-center justify-between mb-3">
@@ -270,7 +295,7 @@ export default function SettingsPage() {
                         </a>
                       </div>
 
-                      {selectedProvider === provider.id && (
+                      {selectedProvider === provider.id && provider.id !== "ollama" && (
                         <>
                           <div className="relative">
                             <input
@@ -320,6 +345,16 @@ export default function SettingsPage() {
                             </p>
                           )}
                         </>
+                      )}
+                      {selectedProvider === provider.id && provider.id === "ollama" && (
+                        <div className="mt-3 p-3 rounded-lg bg-[var(--accent-green)]/10 border border-[var(--accent-green)]/20">
+                          <p className="text-sm text-[var(--accent-green)]">
+                            Ollama roda localmente. Certifique-se de que o Ollama está em execução em http://localhost:11434
+                          </p>
+                          <p className="text-xs text-[var(--text-secondary)] mt-1">
+                            Nenhuma chave de API necessária. Modelos disponíveis serão detectados automaticamente.
+                          </p>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -669,6 +704,122 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* Webhooks Tab */}
+          {activeTab === "webhooks" && (
+            <div className="space-y-6">
+              <div className="glass-card rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--primary)] to-[var(--accent-pink)] flex items-center justify-center">
+                    <Webhook className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold">
+                      Webhook Global de Eventos
+                    </h2>
+                    <p className="text-sm text-[var(--text-secondary)]">
+                      Receba notificações JSON quando eventos importantes
+                      acontecerem na plataforma.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="text-sm text-[var(--text-secondary)] mb-2 block">
+                      URL do Webhook Global
+                    </label>
+                    <input
+                      type="url"
+                      value={webhookUrl}
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      placeholder="https://webhook.site/... ou N8N/Make"
+                      className="input-field w-full"
+                    />
+                    <p className="text-xs text-[var(--text-secondary)] mt-1">
+                      Deixe em branco para desativar o envio de webhooks.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-[var(--surface)] rounded-xl">
+                    <div>
+                      <p className="font-medium">Status do Webhook</p>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        Ligar ou desligar o disparo de webhooks
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={webhookEnabled}
+                        onChange={(e) => setWebhookEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-[var(--border)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--primary)]"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const supabase = createClient();
+                          await supabase.from("system_settings").upsert([
+                            {
+                              key: "global_webhook_url",
+                              value: webhookUrl,
+                            },
+                            {
+                              key: "global_webhook_enabled",
+                              value: String(webhookEnabled),
+                            },
+                          ]);
+                          setWebhookSaved(true);
+                          setTimeout(() => setWebhookSaved(false), 2500);
+                        } catch (err) {
+                          console.error("Erro ao salvar webhook:", err);
+                        }
+                      }}
+                      disabled={webhookSaved}
+                      className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary)]/80 transition-colors disabled:opacity-50 text-sm font-medium"
+                    >
+                      {webhookSaved ? (
+                        <>
+                          <Check className="w-4 h-4" /> Salvo!
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" /> Salvar Configurações
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-card rounded-xl p-6">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-[var(--accent-orange)]" />
+                  Eventos Disponíveis
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {[
+                    { event: "USER_CREATED", desc: "Novo cadastro de usuário" },
+                    { event: "PASSWORD_RESET_REQUESTED", desc: "Solicitação de redefinição de senha" },
+                    { event: "PAYMENT_APPROVED", desc: "Pagamento aprovado (EfíPay)" },
+                    { event: "PAYMENT_FAILED", desc: "Pagamento falhou" },
+                    { event: "PAYMENT_REFUSED", desc: "Pagamento recusado/cancelado/expirado" },
+                    { event: "TEST_COMPLETED", desc: "Teste de conectividade concluído" },
+                  ].map(({ event, desc }) => (
+                    <div key={event} className="p-3 bg-[var(--surface)] rounded-lg border border-[var(--border)]">
+                      <p className="text-sm font-mono text-[var(--primary)]">{event}</p>
+                      <p className="text-xs text-[var(--text-secondary)]">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Preferences Tab */}
           {activeTab === "preferences" && (
             <div className="glass-card rounded-xl p-6">
@@ -828,3 +979,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+
