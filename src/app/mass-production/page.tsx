@@ -58,6 +58,8 @@ import {
 } from "@/services/bulkToEditorService";
 import MediaIntegrityBadge from "@/components/media/MediaIntegrityBadge";
 import { MediaVault } from "@/services/persistentMediaVault";
+import { LocalWhisperService } from "@/services/localWhisperService";
+import { extractHeadline, extractRedTags } from "@/utils/transcriptionExtractor";
 
 type TagType = "hook" | "bodyWithCta" | "development" | "painOrDesire" | "solution" | "cta";
 type ResultsTab = "generated" | "media";
@@ -164,6 +166,12 @@ interface RenderedVideo {
   /** true quando o vídeo está hospedado na nuvem (Supabase Storage) */
   isCloud?: boolean;
   is_posted: boolean;
+  /** Transcricao do audio do video (gerada em background) */
+  transcription?: string;
+  /** Headline extraida da transcricao */
+  headline?: string;
+  /** Redtags/hashtags extraidas da transcricao */
+  redTags?: string[];
 }
 
 interface QueueStatus {
@@ -778,6 +786,30 @@ export default function MassProductionPage() {
             durationFormatted: formatDurationLong(result.duration), status: "ready", progress: 100, savedToDB: true,
             supabaseId: supabaseId || undefined, videoUrl: cloudUrl ?? undefined, isCloud: !!cloudUrl } : v
         ));
+
+        // Transcricao em background: extrai audio, transcreve, gera headline e redtags
+        if (!signal.aborted) {
+          void (async () => {
+            try {
+              const audioFile = new File([result.blob], "audio.wav", { type: "audio/wav" });
+              const transcription = await LocalWhisperService.transcribeFile(
+                audioFile,
+                "Xenova/whisper-tiny",
+                () => {},
+                signal
+              );
+              if (transcription && !signal.aborted) {
+                const headline = extractHeadline(transcription);
+                const redTags = extractRedTags(transcription);
+                setRenderedVideos((prev) => prev.map((v) =>
+                  v.id === videoId ? { ...v, transcription, headline, redTags } : v
+                ));
+              }
+            } catch (err) {
+              console.warn(`[MassProduction] Transcricao falhou para video ${videoId}:`, err);
+            }
+          })();
+        }
 
         // Auto-download (condicional + checagem de cancelamento)
         if (autoDownloadEnabled && !signal.aborted) {
@@ -1489,6 +1521,36 @@ export default function MassProductionPage() {
                         </button>
                       </div>
                       <p className="text-xs text-gray-400">{video.variation.blocks.map((b) => b.id).join(" + ")}</p>
+
+                      {/* Headline extraida do audio */}
+                      {video.headline && (
+                        <div className="mt-2 px-2 py-1.5 rounded-lg bg-pink-950/30 border border-pink-500/15">
+                          <p className="text-[10px] font-bold text-pink-400 uppercase tracking-wider mb-0.5">Headline</p>
+                          <p className="text-xs text-pink-200 leading-snug">{video.headline}</p>
+                        </div>
+                      )}
+
+                      {/* Redtags extraidas do audio */}
+                      {video.redTags && video.redTags.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {video.redTags.slice(0, 8).map((tag, i) => (
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-950/40 text-purple-300 border border-purple-500/15">
+                              {tag}
+                            </span>
+                          ))}
+                          {video.redTags.length > 8 && (
+                            <span className="text-[10px] text-gray-500">+{video.redTags.length - 8}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Loading transcricao */}
+                      {video.status === "ready" && !video.transcription && !video.headline && (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <Loader className="w-3 h-3 animate-spin text-gray-500" />
+                          <span className="text-[10px] text-gray-500">Extraindo audio...</span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <MediaIntegrityBadge
                           hasLocalBlob={video.blob instanceof Blob}
