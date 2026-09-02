@@ -69,20 +69,7 @@ export async function generateScriptWithFallback(
 ): Promise<{ data: Record<string, unknown>; providerUsed: string }> {
   const providers: AIProviderConfig[] = [];
 
-  const openRouterKey =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem("@nexia_openrouter_token_v1") || ""
-      : "";
-  const envOpenRouterKey = process.env.NEXT_PUBLIC_AI_API_KEY || "";
-  if (openRouterKey || envOpenRouterKey) {
-    providers.push({
-      name: "OpenRouter",
-      apiKey: openRouterKey || envOpenRouterKey,
-      baseUrl: "https://openrouter.ai/api/v1/chat/completions",
-      model: "meta-llama/llama-3.3-70b-instruct",
-    });
-  }
-
+  // 1ª TENTATIVA: Groq Cloud (Prioridade Máxima / Alta Velocidade)
   const groqKey =
     typeof window !== "undefined"
       ? window.localStorage.getItem("@nexia_groq_token_v1") || ""
@@ -97,6 +84,21 @@ export async function generateScriptWithFallback(
     });
   }
 
+  // 2ª TENTATIVA: OpenRouter (Backup em caso de falha do Groq)
+  const openRouterKey =
+    typeof window !== "undefined"
+      ? window.localStorage.getItem("@nexia_openrouter_token_v1") || ""
+      : "";
+  const envOpenRouterKey = process.env.NEXT_PUBLIC_AI_API_KEY || "";
+  if (openRouterKey || envOpenRouterKey) {
+    providers.push({
+      name: "OpenRouter",
+      apiKey: openRouterKey || envOpenRouterKey,
+      baseUrl: "https://openrouter.ai/api/v1/chat/completions",
+      model: "meta-llama/llama-3.3-70b-instruct",
+    });
+  }
+
   if (providers.length === 0) {
     throw new Error("Nenhuma chave de API de IA configurada no sistema.");
   }
@@ -106,6 +108,9 @@ export async function generateScriptWithFallback(
   for (const provider of providers) {
     try {
       console.log(`🤖 Tentando gerar roteiro via [${provider.name}]...`);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const response = await fetch(provider.baseUrl, {
         method: "POST",
@@ -118,7 +123,10 @@ export async function generateScriptWithFallback(
           messages: payload.messages,
           temperature: payload.temperature ?? 0.7,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
