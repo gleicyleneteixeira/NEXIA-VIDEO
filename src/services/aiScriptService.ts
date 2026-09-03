@@ -169,6 +169,7 @@ export async function generateScriptsWithRealAI(
     body: JSON.stringify({
       ...params,
       rawContent: params.mode ? params.rawContent ?? params.topic : undefined,
+      groqApiKey: AiKeyService.getGroqToken() || undefined,
     }),
   });
 

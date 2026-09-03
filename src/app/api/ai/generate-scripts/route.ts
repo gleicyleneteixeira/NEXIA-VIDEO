@@ -680,6 +680,10 @@ async function callOpenRouter(
       } finally {
         clearTimeout(apiTimeout);
       }
+
+      if (errorDetails.some((e) => e.includes("429") || e.includes("401") || e.includes("403"))) {
+        break;
+      }
     }
   }
 
@@ -954,16 +958,25 @@ export async function POST(request: NextRequest) {
     const selectedModel =
       model && model !== "google/gemma-4-26b-a4b-it:free" ? model : DEFAULT_MODEL;
 
+    const hasGroq = groqKey?.trim() && groqKey.trim().length > 5;
     const providerPriority = requestedProvider === "groq"
       ? ["groq", "openrouter", "ollama"]
       : requestedProvider === "ollama"
         ? ["ollama", "groq", "openrouter"]
-        : ["openrouter", "groq", "ollama"];
+        : hasGroq
+          ? ["groq", "openrouter", "ollama"]
+          : ["openrouter", "groq", "ollama"];
 
     let result: { variations: Record<string, unknown>[]; usedModel: string } | { error: string } | null = null;
     const allErrors: string[] = [];
 
-    for (const provider of providerPriority) {
+    for (let i = 0; i < providerPriority.length; i++) {
+      const provider = providerPriority[i];
+
+      if (i > 0) {
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+
       if (provider === "openrouter" && openrouterKeys.length > 0) {
         const modelsToTry = [selectedModel];
         for (const rm of RECOMMENDED_FREE_MODELS) {
@@ -978,9 +991,9 @@ export async function POST(request: NextRequest) {
         result = null;
       }
 
-      if (provider === "groq" && groqKey?.trim()) {
+      if (provider === "groq" && hasGroq) {
         const groqModels = [...GROQ_FREE_MODELS];
-        result = await callGroq(groqKey, groqModels, SYSTEM_INSTRUCTION, userPrompt, quantity);
+        result = await callGroq(groqKey.trim(), groqModels, SYSTEM_INSTRUCTION, userPrompt, quantity);
         if (!("error" in result)) break;
         allErrors.push(`[groq] ${result.error}`);
         result = null;
